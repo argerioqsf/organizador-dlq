@@ -672,6 +672,47 @@ td {
   background: var(--panel-soft);
 }
 
+.settings-footnote {
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.settings-history-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.settings-history-copy {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 20px;
+  background: var(--panel-soft);
+}
+
+.settings-backfill-result {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.settings-backfill-result > div {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.9rem 1rem;
+  border-radius: 18px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel-soft);
+}
+
+.settings-backfill-result strong {
+  font-size: 1.3rem;
+  letter-spacing: -0.03em;
+}
+
 .settings-switch {
   position: relative;
   width: 64px;
@@ -1165,7 +1206,8 @@ td {
   }
 
   .stats-grid,
-  .catalog-card-metrics {
+  .catalog-card-metrics,
+  .settings-backfill-result {
     grid-template-columns: 1fr 1fr;
   }
 
@@ -1239,6 +1281,11 @@ td {
   .settings-toggle-row {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .settings-history-grid,
+  .settings-backfill-result {
+    grid-template-columns: 1fr;
   }
 }
 

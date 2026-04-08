@@ -152,3 +152,8 @@ export interface ManualImportResult {
   occurrenceIds: string[];
   skippedSamples: string[];
 }
+
+export interface SlackBackfillResult {
+  requestedDays: number;
+  processedCount: number;
+}

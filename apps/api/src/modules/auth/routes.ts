@@ -119,7 +119,26 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     const accessToken = await exchangeCode(code);
     const userInfo = await fetchUserInfo(accessToken);
 
+    request.log.info(
+      {
+        slackTeamId: userInfo["https://slack.com/team_id"] ?? null,
+        slackUserId: userInfo["https://slack.com/user_id"] ?? null,
+        configuredSlackTeamId: env.SLACK_TEAM_ID ?? null,
+      },
+      "Slack OAuth user info received",
+    );
+
     if (!isAllowedUser(userInfo)) {
+      request.log.warn(
+        {
+          slackTeamId: userInfo["https://slack.com/team_id"] ?? null,
+          slackUserId: userInfo["https://slack.com/user_id"] ?? null,
+          configuredSlackTeamId: env.SLACK_TEAM_ID ?? null,
+          allowedSlackUserIds: Array.from(allowedSlackUserIds),
+          allowedEmailDomain: env.SLACK_ALLOWED_EMAIL_DOMAIN ?? null,
+        },
+        "Slack user rejected by access rules",
+      );
       return reply.status(403).send({ message: "Slack user not allowed." });
     }
 

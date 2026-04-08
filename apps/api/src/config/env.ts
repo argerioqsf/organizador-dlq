@@ -23,7 +23,7 @@ for (const candidate of envCandidates) {
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().default(3333),
-  WEB_ORIGIN: z.string().url().default("http://localhost:5173"),
+  WEB_ORIGIN: z.string().url().default("https://localhost:5173"),
   DATABASE_URL: z
     .string()
     .min(1)

@@ -12,6 +12,7 @@ import { occurrenceRoutes } from "./modules/occurrences/routes.js";
 import { issueRoutes } from "./modules/issues/routes.js";
 import { catalogRoutes } from "./modules/catalog/routes.js";
 import { manualImportRoutes } from "./modules/manual-import/routes.js";
+import { slackAdminRoutes } from "./modules/slack-admin/routes.js";
 
 export async function buildApp() {
   const app = Fastify({
@@ -46,6 +47,7 @@ export async function buildApp() {
   await app.register(issueRoutes);
   await app.register(catalogRoutes);
   await app.register(manualImportRoutes);
+  await app.register(slackAdminRoutes);
 
   return app;
 }

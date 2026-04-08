@@ -21,6 +21,8 @@ services:
       dockerfile: apps/api/Dockerfile
     env_file:
       - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/dlq_organizer?schema=public
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,4 +48,3 @@ services:
 
 volumes:
   postgres-data:
-

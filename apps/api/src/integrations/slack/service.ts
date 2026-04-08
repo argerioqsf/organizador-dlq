@@ -23,6 +23,13 @@ export interface SlackMessageEventPayload {
   subtype?: string;
 }
 
+export interface SlackIngestResult {
+  status: "ignored" | "ingested";
+  reason?: string;
+  occurrenceId?: string;
+  catalogId?: string;
+}
+
 function buildIssueTitle(topic: string, kind: string, message: string | null): string {
   return `${topic} / ${kind}${message ? ` - ${message.slice(0, 120)}` : ""}`;
 }
@@ -58,13 +65,15 @@ function occurrenceStatusFromCatalog(catalogStatus: CatalogStatus): OccurrenceSt
   }
 }
 
-export async function ingestSlackMessage(event: SlackMessageEventPayload): Promise<void> {
+export async function ingestSlackMessage(
+  event: SlackMessageEventPayload,
+): Promise<SlackIngestResult> {
   if (!event.channel || !event.ts || event.subtype) {
-    return;
+    return { status: "ignored", reason: "missing-channel-ts-or-subtype" };
   }
 
   if (!env.SLACK_CHANNEL_ID || event.channel !== env.SLACK_CHANNEL_ID) {
-    return;
+    return { status: "ignored", reason: "channel-not-allowed" };
   }
 
   const rawPayload = event as Record<string, unknown>;
@@ -72,12 +81,12 @@ export async function ingestSlackMessage(event: SlackMessageEventPayload): Promi
   const parsed = parseDlqMessage(normalizedText);
 
   if (!parsed) {
-    return;
+    return { status: "ignored", reason: "message-not-recognized-as-dlq" };
   }
 
   const permalink = await getPermalink(event.channel, event.ts);
 
-  await persistDlqRecord({
+  const persisted = await persistDlqRecord({
     channelId: event.channel!,
     slackTs: event.ts!,
     normalizedText,
@@ -86,6 +95,12 @@ export async function ingestSlackMessage(event: SlackMessageEventPayload): Promi
     rawPayload,
     permalink,
   });
+
+  return {
+    status: "ingested",
+    occurrenceId: persisted.occurrenceId,
+    catalogId: persisted.catalogId,
+  };
 }
 
 export async function persistDlqRecord(params: {

@@ -56,14 +56,15 @@ pnpm dev
 
 API: `http://localhost:3333`
 
-Web: `http://localhost:5173`
+Web: `https://localhost:5173`
 
 Com `DEV_AUTH_BYPASS=true`, a UI entra direto em modo local e você pode testar sem configurar Slack.
+Se o navegador avisar sobre o certificado local gerado pelo Vite, aceite a exceção uma vez para continuar.
 
 ## Teste manual sem Slack
 
 1. Suba Postgres e a aplicação.
-2. Abra `http://localhost:5173/manual-import`.
+2. Abra `https://localhost:5173/manual-import`.
 3. Cole uma ou várias mensagens copiadas do Slack, ou envie um arquivo `.txt`/`.log`.
 4. Clique em `Importar conteúdo`.
 
@@ -87,10 +88,13 @@ O stack sobe:
 - Postgres em `localhost:5432`
 - aplicação publicada pelo reverse proxy em `http://localhost:8080`
 
+No `docker compose`, a API usa `postgres` como host do banco dentro da rede interna do Docker, mesmo que seu `.env` local use `localhost` fora dos containers.
+
 ## Principais rotas
 
 - `POST /integrations/slack/events`
 - `POST /api/manual-import`
+- `POST /api/slack/backfill`
 - `GET /api/me`
 - `GET /api/dashboard`
 - `GET /api/occurrences`
@@ -115,7 +119,23 @@ O stack sobe:
 - um mesmo catálogo pode ter várias issues ao longo do tempo
 - novas ocorrências em um catálogo resolvido ou cancelado movem o catálogo para `pending`
 - status da issue propaga apenas para as DLQs vinculadas a ela
+- o backfill histórico do Slack pode ser executado por comando ou pela tela de configurações, escolhendo a quantidade de dias
 - segredos em `Authorization`, tokens, cookies e headers sensíveis são mascarados antes de persistir
+
+## Como funciona a ingestão em tempo real do Slack
+
+- o backend expõe `POST /integrations/slack/events`
+- o Slack envia para essa rota sempre que a app recebe eventos configurados em `Event Subscriptions`
+- o backend valida a assinatura com `SLACK_SIGNING_SECRET`
+- eventos `message` do canal configurado em `SLACK_CHANNEL_ID` são parseados e persistidos
+- a ingestão começa automaticamente quando a API está no ar e a URL pública do Slack aponta para ela; não existe processo separado para "ligar"
+
+Para observar funcionando:
+
+- veja os logs da API
+- no handshake inicial, você verá `Slack Events API URL verification received`
+- a cada evento recebido, verá `Slack event callback received`
+- depois do processamento, verá `Slack event processed` com `status: "ingested"` ou `status: "ignored"`
 
 ## Testes
 

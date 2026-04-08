@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 
-import { ingestSlackMessage } from "./service.js";
+import { ingestSlackMessage, type SlackMessageEventPayload } from "./service.js";
 import { verifySlackSignature } from "./signature.js";
 
 export const slackRoutes: FastifyPluginAsync = async (fastify) => {
@@ -32,11 +32,31 @@ export const slackRoutes: FastifyPluginAsync = async (fastify) => {
       | undefined;
 
     if (payload?.type === "url_verification" && payload.challenge) {
+      request.log.info("Slack Events API URL verification received");
       return reply.send({ challenge: payload.challenge });
     }
 
     if (payload?.type === "event_callback" && payload.event) {
-      await ingestSlackMessage(payload.event);
+      const event = payload.event as SlackMessageEventPayload;
+      request.log.info(
+        {
+          channel: event.channel ?? null,
+          ts: event.ts ?? null,
+          subtype: event.subtype ?? null,
+        },
+        "Slack event callback received",
+      );
+
+      const result = await ingestSlackMessage(event);
+
+      request.log.info(
+        {
+          channel: event.channel ?? null,
+          ts: event.ts ?? null,
+          result,
+        },
+        "Slack event processed",
+      );
     }
 
     return reply.send({ ok: true });

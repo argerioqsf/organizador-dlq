@@ -11,9 +11,34 @@ import type {
   ManualImportResult,
   OccurrenceFilters,
   OccurrenceStatus,
+  SlackBackfillResult,
 } from "@dlq-organizer/shared";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
+const configuredApiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "").trim();
+
+function resolveApiBaseUrl() {
+  if (!configuredApiBaseUrl) {
+    return "";
+  }
+
+  if (typeof window !== "undefined") {
+    const isHttpsLocalPage =
+      window.location.protocol === "https:" &&
+      ["localhost", "127.0.0.1"].includes(window.location.hostname);
+    const isHttpLocalApi = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(
+      configuredApiBaseUrl,
+    );
+
+    // Avoid mixed-content errors in local HTTPS dev by falling back to the Vite proxy.
+    if (isHttpsLocalPage && isHttpLocalApi) {
+      return "";
+    }
+  }
+
+  return configuredApiBaseUrl.replace(/\/$/, "");
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
 
 class ApiError extends Error {
   status: number;
@@ -199,5 +224,12 @@ export function importManualContent(payload: {
   return request<ManualImportResult>("/api/manual-import", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export function runSlackBackfill(days: number) {
+  return request<SlackBackfillResult>("/api/slack/backfill", {
+    method: "POST",
+    body: JSON.stringify({ days }),
   });
 }

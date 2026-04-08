@@ -9,8 +9,10 @@ import {
 
 interface AppSettingsValue {
   syncEnabled: boolean;
+  slackHistoryDays: number;
   ignoredKinds: string[];
   setSyncEnabled: (value: boolean) => void;
+  setSlackHistoryDays: (value: number) => void;
   addIgnoredKinds: (value: string) => void;
   removeIgnoredKind: (value: string) => void;
   isKindIgnored: (value?: string | null) => boolean;
@@ -37,6 +39,7 @@ function parseIgnoredKinds(value: string) {
 
 export function AppSettingsProvider({ children }: { children: ReactNode }) {
   const [syncEnabled, setSyncEnabledState] = useState(true);
+  const [slackHistoryDays, setSlackHistoryDaysState] = useState(90);
   const [ignoredKinds, setIgnoredKinds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -48,10 +51,17 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
     try {
       const parsed = JSON.parse(raw) as {
         syncEnabled?: boolean;
+        slackHistoryDays?: number;
         ignoredKinds?: string[];
       };
 
       setSyncEnabledState(parsed.syncEnabled ?? true);
+      setSlackHistoryDaysState(
+        typeof parsed.slackHistoryDays === "number" &&
+          Number.isFinite(parsed.slackHistoryDays)
+          ? Math.min(Math.max(Math.round(parsed.slackHistoryDays), 1), 365)
+          : 90,
+      );
       setIgnoredKinds(
         Array.from(
           new Set((parsed.ignoredKinds ?? []).map(normalizeKind).filter(Boolean)),
@@ -67,16 +77,21 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
       STORAGE_KEY,
       JSON.stringify({
         syncEnabled,
+        slackHistoryDays,
         ignoredKinds,
       }),
     );
-  }, [ignoredKinds, syncEnabled]);
+  }, [ignoredKinds, slackHistoryDays, syncEnabled]);
 
   const value = useMemo<AppSettingsValue>(
     () => ({
       syncEnabled,
+      slackHistoryDays,
       ignoredKinds,
       setSyncEnabled: setSyncEnabledState,
+      setSlackHistoryDays: (value) => {
+        setSlackHistoryDaysState(Math.min(Math.max(Math.round(value), 1), 365));
+      },
       addIgnoredKinds: (input) => {
         const values = parseIgnoredKinds(input);
         if (values.length === 0) {
@@ -97,7 +112,7 @@ export function AppSettingsProvider({ children }: { children: ReactNode }) {
         return ignoredKinds.includes(normalizeKind(input));
       },
     }),
-    [ignoredKinds, syncEnabled],
+    [ignoredKinds, slackHistoryDays, syncEnabled],
   );
 
   return (
