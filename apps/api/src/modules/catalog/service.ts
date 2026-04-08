@@ -75,18 +75,29 @@ export async function updateCatalogStatus(params: {
   status: CatalogStatus;
   updatedBySlackUserId: string;
 }): Promise<ErrorCatalogEntry> {
-  const catalog = await prisma.errorCatalog.update({
-    where: { id: params.id },
-    data: { status: params.status },
-    include: {
-      occurrences: {
-        select: { createdAt: true, id: true, issueId: true },
-        orderBy: { createdAt: "desc" },
+  const catalog = await prisma.$transaction(async (tx) => {
+    const activeIssueCount = await tx.issue.count({
+      where: {
+        catalogId: params.id,
+        status: { in: ["open", "pending"] },
       },
-      issues: {
-        select: { status: true },
+    });
+
+    const nextStatus = activeIssueCount > 0 ? "pending" : params.status;
+
+    return tx.errorCatalog.update({
+      where: { id: params.id },
+      data: { status: nextStatus },
+      include: {
+        occurrences: {
+          select: { createdAt: true, id: true, issueId: true },
+          orderBy: { createdAt: "desc" },
+        },
+        issues: {
+          select: { status: true },
+        },
       },
-    },
+    });
   });
 
   await prisma.dlqOccurrence.updateMany({

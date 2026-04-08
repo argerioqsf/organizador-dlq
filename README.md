@@ -1,6 +1,6 @@
 # DLQ Organizer
 
-Monorepo TypeScript para organizar DLQs recebidas no Slack, agrupar ocorrências técnicas em catálogo e tratar erros operacionais como `issues`.
+Monorepo TypeScript para organizar DLQs recebidas no Slack, agrupar erros recorrentes e tratar erros operacionais como `issues`.
 
 ## Stack
 
@@ -14,9 +14,9 @@ Monorepo TypeScript para organizar DLQs recebidas no Slack, agrupar ocorrências
 - backfill dos últimos 90 dias via `conversations.history`
 - importação manual por arquivo ou texto colado na UI
 - parser para mensagens no formato mostrado nas capturas
-- catálogo técnico automático por `topic + kind + fingerprint`, com status próprio
-- criação manual de `issues` a partir de um catálogo quando alguém for atuar no problema
-- dashboard com ocorrências, indicadores e lista de issues
+- agrupamento automático de erros recorrentes por `topic + kind + fingerprint`, com status próprio
+- criação manual de `issues` a partir de um erro recorrente quando alguém for atuar no problema
+- dashboard com DLQs, indicadores e lista de issues
 - área para editar issues, mudar status e adicionar ou remover DLQs
 
 ## Estrutura
@@ -68,7 +68,7 @@ Se o navegador avisar sobre o certificado local gerado pelo Vite, aceite a exce�
 3. Cole uma ou várias mensagens copiadas do Slack, ou envie um arquivo `.txt`/`.log`.
 4. Clique em `Importar conteúdo`.
 
-O import manual usa o mesmo parser e a mesma lógica real de catálogo e vínculo manual com issues.
+O import manual usa o mesmo parser e a mesma lógica real de erros recorrentes e vínculo manual com issues.
 
 ## Backfill inicial
 
@@ -86,6 +86,7 @@ docker compose up --build
 O stack sobe:
 
 - Postgres em `localhost:5432`
+- API em `localhost:3333`
 - aplicação publicada pelo reverse proxy em `http://localhost:8080`
 
 No `docker compose`, a API usa `postgres` como host do banco dentro da rede interna do Docker, mesmo que seu `.env` local use `localhost` fora dos containers.
@@ -114,10 +115,10 @@ No `docker compose`, a API usa `postgres` como host do banco dentro da rede inte
 
 ## Regras principais
 
-- novas DLQs são agrupadas automaticamente em catálogos por assinatura técnica
-- issues não são criadas automaticamente; elas são abertas manualmente a partir de um catálogo
-- um mesmo catálogo pode ter várias issues ao longo do tempo
-- novas ocorrências em um catálogo resolvido ou cancelado movem o catálogo para `pending`
+- novas DLQs são agrupadas automaticamente em erros recorrentes por assinatura técnica
+- issues não são criadas automaticamente; elas são abertas manualmente a partir de um erro recorrente
+- um mesmo erro recorrente pode ter várias issues ao longo do tempo
+- novas DLQs em um erro recorrente resolvido ou cancelado movem esse erro recorrente para `pending`
 - status da issue propaga apenas para as DLQs vinculadas a ela
 - o backfill histórico do Slack pode ser executado por comando ou pela tela de configurações, escolhendo a quantidade de dias
 - segredos em `Authorization`, tokens, cookies e headers sensíveis são mascarados antes de persistir
@@ -136,6 +137,21 @@ Para observar funcionando:
 - no handshake inicial, você verá `Slack Events API URL verification received`
 - a cada evento recebido, verá `Slack event callback received`
 - depois do processamento, verá `Slack event processed` com `status: "ingested"` ou `status: "ignored"`
+
+## Teste local com túnel
+
+Com o `docker compose` ativo, a forma mais simples de expor a API local para o Slack é:
+
+```bash
+ngrok http 3333
+```
+
+Depois use a URL HTTPS gerada pelo túnel em:
+
+- `Event Subscriptions > Request URL`
+  `https://SEU-TUNNEL/integrations/slack/events`
+- `SLACK_REDIRECT_URI`
+  `https://SEU-TUNNEL/auth/slack/callback`
 
 ## Testes
 

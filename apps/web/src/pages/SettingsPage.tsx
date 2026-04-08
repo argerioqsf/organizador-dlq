@@ -92,7 +92,7 @@ export function SettingsPage() {
             <div>
               <strong>{syncEnabled ? "Ativada" : "Desativada"}</strong>
               <p className="muted-text">
-                Quando ativa, dashboard, catálogo, issues e ocorrências atualizam sozinhos
+                Quando ativa, dashboard, erros recorrentes, issues e DLQs atualizam sozinhos
                 no navegador.
               </p>
             </div>
@@ -185,7 +185,7 @@ export function SettingsPage() {
             <h3>Kinds ignorados</h3>
             <p>
               Esconda kinds que não fazem sentido para sua rotina. Essa filtragem vale nas
-              telas de dashboard, catálogo, issues e ocorrências.
+              telas de dashboard, erros recorrentes, issues e DLQs.
             </p>
           </div>
 

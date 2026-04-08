@@ -88,12 +88,12 @@ export function ManualImportPage() {
         <article className="panel">
           <div className="section-title">
             <h3>Como usar</h3>
-            <p>Fluxo rápido para validar parser, catálogos e triagem.</p>
+            <p>Fluxo rápido para validar parser, erros recorrentes e triagem.</p>
           </div>
           <div className="stack muted-copy">
             <p>1. Copie uma ou várias mensagens do Slack contendo `NEW DLQ MESSAGE`.</p>
             <p>2. Cole no campo de texto ou selecione um arquivo texto.</p>
-            <p>3. A importação usa o mesmo parser, catálogo e lógica de ocorrências do fluxo real.</p>
+            <p>3. A importação usa o mesmo parser, a mesma lógica de erros recorrentes e o mesmo fluxo real de DLQs.</p>
           </div>
 
           {importMutation.data ? (
@@ -113,7 +113,7 @@ export function ManualImportPage() {
                   <p>{importMutation.data.issueCount}</p>
                 </div>
                 <div>
-                  <span className="eyebrow">Catálogos no banco</span>
+                  <span className="eyebrow">Erros recorrentes no banco</span>
                   <p>{importMutation.data.catalogCount}</p>
                 </div>
               </div>
@@ -123,7 +123,7 @@ export function ManualImportPage() {
                   {importMutation.data.occurrenceIds.slice(0, 10).map((id) => (
                     <Link className="list-item compact" key={id} to={`/occurrences/${id}`}>
                       <strong>{id}</strong>
-                      <span>Abrir ocorrência</span>
+                      <span>Abrir DLQ</span>
                     </Link>
                   ))}
                 </div>

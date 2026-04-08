@@ -81,15 +81,15 @@ export function AppShell({ user }: AppShellProps) {
               </span>
             </button>
           </div>
-          <p className="sidebar-subtitle">Catálogo, triagem e acompanhamento em um só fluxo.</p>
+          <p className="sidebar-subtitle">DLQs, erros recorrentes e acompanhamento em um só fluxo.</p>
         </div>
 
         <div className="sidebar-body">
           <nav className="nav">
             <NavLink to="/">Dashboard</NavLink>
-            <NavLink to="/occurrences">Ocorrências</NavLink>
+            <NavLink to="/occurrences">DLQs</NavLink>
             <NavLink to="/issues">Issues</NavLink>
-            <NavLink to="/catalog">Catálogo</NavLink>
+            <NavLink to="/catalog">Erros recorrentes</NavLink>
             <NavLink to="/manual-import">Importar Manual</NavLink>
             <NavLink to="/settings">Configurações</NavLink>
           </nav>

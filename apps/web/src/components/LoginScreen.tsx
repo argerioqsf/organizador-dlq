@@ -7,7 +7,7 @@ export function LoginScreen() {
         <p className="eyebrow">Internal Tool</p>
         <h1>DLQ Organizer</h1>
         <p>
-          Centralize as DLQs do canal de Slack, agrupe ocorrências por erro e
+          Centralize as DLQs do canal de Slack, agrupe erros recorrentes e
           trate issues operacionais sem depender do histórico do canal.
         </p>
         <button className="primary-button" onClick={loginWithSlack}>
@@ -17,4 +17,3 @@ export function LoginScreen() {
     </main>
   );
 }
-

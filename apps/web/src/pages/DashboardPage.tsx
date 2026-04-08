@@ -1,7 +1,10 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
 import { getDashboard } from "../api/client";
+import { IssueDetailModal } from "../components/IssueDetailModal";
+import { OccurrenceDetailModal } from "../components/OccurrenceDetailModal";
 import { StatCard } from "../components/StatCard";
 import { StatusBadge } from "../components/StatusBadge";
 import { useAppSettings } from "../settings/AppSettingsContext";
@@ -12,6 +15,8 @@ function summarizeIssue(title: string) {
 
 export function DashboardPage() {
   const { isKindIgnored, syncEnabled } = useAppSettings();
+  const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
+  const [selectedOccurrenceId, setSelectedOccurrenceId] = useState<string | null>(null);
   const dashboardQuery = useQuery({
     queryKey: ["dashboard"],
     queryFn: getDashboard,
@@ -42,13 +47,13 @@ export function DashboardPage() {
           <p className="eyebrow">Visão Geral</p>
           <h2>Dashboard</h2>
           <p className="page-summary">
-            Acompanhe volume, catálogos ativos, issues em tratamento e a fila mais recente
+            Acompanhe volume, erros recorrentes ativos, issues em tratamento e a fila mais recente
             sem depender do histórico do Slack.
           </p>
         </div>
         <div className="page-actions">
           <Link className="ghost-button" to="/catalog">
-            Abrir catálogo
+            Abrir erros recorrentes
           </Link>
           <Link className="primary-button button-link" to="/manual-import">
             Importar dados
@@ -57,12 +62,12 @@ export function DashboardPage() {
       </header>
 
       <section className="stats-grid">
-        <StatCard label="Total de ocorrências" value={data.totalOccurrences} tone="accent" />
+        <StatCard label="Total de DLQs" value={data.totalOccurrences} tone="accent" />
         <StatCard label="Novas" value={data.statusCounts.new} />
         <StatCard label="Investigando" value={data.statusCounts.investigating} />
         <StatCard label="Resolvidas" value={data.statusCounts.resolved} />
-        <StatCard label="Catálogos abertos" value={data.catalogStatusCounts.open} />
-        <StatCard label="Catálogos pendentes" value={data.catalogStatusCounts.pending} />
+        <StatCard label="Erros recorrentes abertos" value={data.catalogStatusCounts.open} />
+        <StatCard label="Erros recorrentes pendentes" value={data.catalogStatusCounts.pending} />
         <StatCard label="Issues abertas" value={data.issueStatusCounts.open} />
         <StatCard label="Issues pendentes" value={data.issueStatusCounts.pending} />
       </section>
@@ -78,13 +83,18 @@ export function DashboardPage() {
               <p className="muted-text">Nenhuma issue visível com os filtros locais atuais.</p>
             ) : (
               filteredHighlightedIssues.map((issue) => (
-                <Link className="list-item" key={issue.id} to={`/issues/${issue.id}`}>
+                <button
+                  className="list-item dashboard-item-button"
+                  key={issue.id}
+                  onClick={() => setSelectedIssueId(issue.id)}
+                  type="button"
+                >
                   <div className="list-item-body">
                     <strong>{summarizeIssue(issue.title)}</strong>
                     <p className="list-item-meta">{issue.occurrenceCount} DLQs vinculadas</p>
                   </div>
                   <StatusBadge status={issue.status} />
-                </Link>
+                </button>
               ))
             )}
           </div>
@@ -125,32 +135,48 @@ export function DashboardPage() {
 
       <section className="panel">
         <div className="panel-header">
-          <h3>Últimas ocorrências</h3>
+          <h3>Últimas DLQs</h3>
           <Link to="/occurrences">Ver todas</Link>
         </div>
         <div className="list">
           {filteredRecentOccurrences.length === 0 ? (
-            <p className="muted-text">Nenhuma ocorrência visível com os filtros locais atuais.</p>
-          ) : (
-            filteredRecentOccurrences.map((occurrence) => (
-              <Link className="list-item occurrence-row" key={occurrence.id} to={`/occurrences/${occurrence.id}`}>
-                <div className="occurrence-row-date">
-                  {new Date(occurrence.createdAt).toLocaleString()}
-                </div>
-                <div className="occurrence-row-main">
-                  <strong>{occurrence.kind}</strong>
-                  <p className="list-item-meta">{occurrence.topic}</p>
-                </div>
-                <div className="occurrence-row-side">
-                  <span className="subtle-label">Issue</span>
-                  <p>{occurrence.issue?.title ?? "Sem issue"}</p>
-                </div>
-                <StatusBadge status={occurrence.status} />
-              </Link>
-            ))
-          )}
+              <p className="muted-text">Nenhuma DLQ visível com os filtros locais atuais.</p>
+            ) : (
+              filteredRecentOccurrences.map((occurrence) => (
+                <button
+                  className="list-item occurrence-row dashboard-item-button"
+                  key={occurrence.id}
+                  onClick={() => setSelectedOccurrenceId(occurrence.id)}
+                  type="button"
+                >
+                  <div className="occurrence-row-date">
+                    {new Date(occurrence.createdAt).toLocaleString()}
+                  </div>
+                  <div className="occurrence-row-main">
+                    <strong>{occurrence.kind}</strong>
+                    <p className="list-item-meta">{occurrence.topic}</p>
+                  </div>
+                  <div className="occurrence-row-side">
+                    <span className="subtle-label">Issue</span>
+                    <p>{occurrence.issue?.title ?? "Sem issue"}</p>
+                  </div>
+                  <StatusBadge status={occurrence.status} />
+                </button>
+              ))
+            )}
         </div>
       </section>
+
+      {selectedIssueId ? (
+        <IssueDetailModal issueId={selectedIssueId} onClose={() => setSelectedIssueId(null)} />
+      ) : null}
+
+      {selectedOccurrenceId ? (
+        <OccurrenceDetailModal
+          occurrenceId={selectedOccurrenceId}
+          onClose={() => setSelectedOccurrenceId(null)}
+        />
+      ) : null}
     </div>
   );
 }

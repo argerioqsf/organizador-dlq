@@ -120,6 +120,33 @@ function buildWhere(filters: IssueFilters): Prisma.IssueWhereInput {
   };
 }
 
+function isActiveIssueStatus(status: IssueStatus): boolean {
+  return status === "open" || status === "pending";
+}
+
+async function syncCatalogStatusFromIssues(
+  tx: Prisma.TransactionClient,
+  catalogId: string | null,
+): Promise<void> {
+  if (!catalogId) {
+    return;
+  }
+
+  const activeIssueCount = await tx.issue.count({
+    where: {
+      catalogId,
+      status: { in: ["open", "pending"] },
+    },
+  });
+
+  await tx.errorCatalog.update({
+    where: { id: catalogId },
+    data: {
+      status: activeIssueCount > 0 ? "pending" : "resolved",
+    },
+  });
+}
+
 export async function listIssues(
   filters: IssueFilters,
 ): Promise<ApiListResponse<Issue>> {
@@ -167,6 +194,21 @@ export async function createIssue(params: {
       params.title ??
       (catalog ? `${catalog.topic} / ${catalog.kind}` : "Nova issue");
 
+    if (catalog && params.includeUnassignedOccurrences) {
+      const availableUnassignedCount = await tx.dlqOccurrence.count({
+        where: {
+          catalogId: catalog.id,
+          issueId: null,
+        },
+      });
+
+      if (availableUnassignedCount === 0 && !(params.occurrenceIds?.length)) {
+        throw new Error(
+          "Todas as DLQs desse erro recorrente já estão vinculadas a uma issue.",
+        );
+      }
+    }
+
     const createdIssue = await tx.issue.create({
       data: {
         title: resolvedTitle,
@@ -182,15 +224,7 @@ export async function createIssue(params: {
     });
 
     if (catalog) {
-      await tx.errorCatalog.update({
-        where: { id: catalog.id },
-        data: {
-          status:
-            createdIssue.status === "open" || createdIssue.status === "pending"
-              ? "open"
-              : undefined,
-        },
-      });
+      await syncCatalogStatusFromIssues(tx, catalog.id);
     }
 
     if (params.includeUnassignedOccurrences && catalog) {
@@ -243,6 +277,8 @@ export async function updateIssue(params: {
     });
 
     if (params.status) {
+      await syncCatalogStatusFromIssues(tx, issue.catalogId);
+
       await tx.dlqOccurrence.updateMany({
         where: { issueId: issue.id },
         data: {
