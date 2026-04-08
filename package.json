@@ -1,0 +1,20 @@
+{
+  "name": "organizador-dlq",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm --parallel --filter @dlq-organizer/api --filter @dlq-organizer/web dev",
+    "lint": "pnpm -r lint",
+    "test": "pnpm --filter @dlq-organizer/api test",
+    "prisma:generate": "pnpm exec dotenv -e .env -- pnpm --filter @dlq-organizer/api exec prisma generate --schema prisma/schema.prisma",
+    "prisma:db:push": "pnpm exec dotenv -e .env -- pnpm --filter @dlq-organizer/api exec prisma db push --schema prisma/schema.prisma",
+    "prisma:migrate": "pnpm exec dotenv -e .env -- pnpm --filter @dlq-organizer/api exec prisma migrate dev --schema prisma/schema.prisma",
+    "backfill": "pnpm --filter @dlq-organizer/api backfill"
+  },
+  "devDependencies": {
+    "dotenv-cli": "^7.4.2",
+    "typescript": "^5.6.3"
+  }
+}

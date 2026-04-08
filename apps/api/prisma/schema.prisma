@@ -1,0 +1,124 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OccurrenceStatus {
+  new
+  investigating
+  resolved
+  ignored
+}
+
+enum IssueStatus {
+  open
+  pending
+  resolved
+  canceled
+}
+
+enum CatalogStatus {
+  open
+  pending
+  resolved
+  canceled
+}
+
+model SlackMessage {
+  id               String         @id @default(cuid())
+  channelId        String
+  slackTs          String
+  normalizedText   String
+  sourceApp        String?
+  rawPayload       Json
+  sanitizedPayload Json
+  permalink        String?
+  receivedAt       DateTime       @default(now())
+  occurrence       DlqOccurrence?
+
+  @@unique([channelId, slackTs])
+  @@index([receivedAt])
+}
+
+model ErrorCatalog {
+  id            String          @id @default(cuid())
+  topic         String
+  kind          String
+  fingerprint   String
+  signatureText String
+  status        CatalogStatus   @default(open)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  occurrences   DlqOccurrence[]
+  issues        Issue[]
+
+  @@unique([topic, kind, fingerprint])
+  @@index([topic, kind])
+  @@index([status, updatedAt])
+}
+
+model Issue {
+  id                   String          @id @default(cuid())
+  title                String
+  description          String?
+  status               IssueStatus     @default(open)
+  autoCreated          Boolean         @default(false)
+  topic                String?
+  kind                 String?
+  fingerprint          String?
+  updatedBySlackUserId String?
+  catalogId            String?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  catalog              ErrorCatalog?   @relation(fields: [catalogId], references: [id], onDelete: SetNull)
+  occurrences          DlqOccurrence[]
+
+  @@index([status, updatedAt])
+  @@index([catalogId])
+}
+
+model DlqOccurrence {
+  id                   String           @id @default(cuid())
+  slackMessageId       String           @unique
+  channelId            String
+  slackTs              String
+  source               String?
+  topic                String
+  kind                 String
+  messageKey           String?
+  externalReference    String?
+  errorMessage         String?
+  errorResponse        String?
+  errorStack           String?
+  curl                 String?
+  fingerprint          String
+  searchableText       String
+  status               OccurrenceStatus @default(new)
+  slackPermalink       String?
+  rawContent           Json?
+  updatedBySlackUserId String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  catalogId            String
+  issueId              String?
+  catalog              ErrorCatalog     @relation(fields: [catalogId], references: [id])
+  issue                Issue?           @relation(fields: [issueId], references: [id], onDelete: SetNull)
+  slackMessage         SlackMessage     @relation(fields: [slackMessageId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([topic, kind, createdAt])
+  @@index([fingerprint])
+  @@index([issueId])
+}
+
+model ChannelSyncState {
+  channelId      String   @id
+  cursor         String?
+  lastBackfillAt DateTime?
+  lastEventAt    DateTime?
+  updatedAt      DateTime @updatedAt
+}
