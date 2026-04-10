@@ -13,7 +13,7 @@ describe("resolveCatalogBackfillPlan", () => {
       resolveCatalogBackfillPlan({
         currentStatus: "resolved",
         occurrenceStatuses: ["resolved"],
-        newOccurrenceStatuses: [],
+        processedOccurrenceStatuses: [],
         activeIssueCount: 1,
         unassignedOccurrenceCount: 0,
       }),
@@ -29,7 +29,7 @@ describe("resolveCatalogBackfillPlan", () => {
       resolveCatalogBackfillPlan({
         currentStatus: "resolved",
         occurrenceStatuses: ["resolved", "resolved"],
-        newOccurrenceStatuses: ["resolved"],
+        processedOccurrenceStatuses: ["resolved"],
         activeIssueCount: 0,
         unassignedOccurrenceCount: 1,
       }).nextCatalogStatus,
@@ -41,7 +41,7 @@ describe("resolveCatalogBackfillPlan", () => {
       resolveCatalogBackfillPlan({
         currentStatus: "open",
         occurrenceStatuses: ["resolved", "new", "new"],
-        newOccurrenceStatuses: ["resolved"],
+        processedOccurrenceStatuses: ["resolved"],
         activeIssueCount: 0,
         unassignedOccurrenceCount: 1,
       }).nextCatalogStatus,
@@ -53,7 +53,7 @@ describe("resolveCatalogBackfillPlan", () => {
       resolveCatalogBackfillPlan({
         currentStatus: "pending",
         occurrenceStatuses: ["resolved", "resolved"],
-        newOccurrenceStatuses: [],
+        processedOccurrenceStatuses: [],
         activeIssueCount: 0,
         unassignedOccurrenceCount: 0,
       }).nextCatalogStatus,
@@ -65,7 +65,7 @@ describe("resolveCatalogBackfillPlan", () => {
       resolveCatalogBackfillPlan({
         currentStatus: "open",
         occurrenceStatuses: ["investigating"],
-        newOccurrenceStatuses: ["investigating"],
+        processedOccurrenceStatuses: ["investigating"],
         activeIssueCount: 0,
         unassignedOccurrenceCount: 2,
       }),
@@ -81,7 +81,7 @@ describe("resolveCatalogBackfillPlan", () => {
       resolveCatalogBackfillPlan({
         currentStatus: "pending",
         occurrenceStatuses: ["new", "new", "resolved"],
-        newOccurrenceStatuses: ["new"],
+        processedOccurrenceStatuses: ["new"],
         activeIssueCount: 0,
         unassignedOccurrenceCount: 3,
       }),
@@ -97,7 +97,7 @@ describe("resolveCatalogBackfillPlan", () => {
       resolveCatalogBackfillPlan({
         currentStatus: "pending",
         occurrenceStatuses: ["new", "investigating"],
-        newOccurrenceStatuses: ["new"],
+        processedOccurrenceStatuses: ["new"],
         activeIssueCount: 1,
         unassignedOccurrenceCount: 3,
       }),

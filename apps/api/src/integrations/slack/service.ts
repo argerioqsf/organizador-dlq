@@ -382,6 +382,7 @@ export async function persistDlqRecord(params: {
         ]
           .filter(Boolean)
           .join("\n"),
+        status: params.occurrenceStatusOverride ?? undefined,
         catalogId: effectiveCatalog.id,
         slackPermalink: params.permalink,
         rawContent: params.parsed.rawText
@@ -464,9 +465,9 @@ export async function backfillSlackMessages(days: number): Promise<number> {
 
     for (const message of response.messages ?? []) {
       const typedMessage = message as SlackMessageEventPayload;
-      const occurrenceStatusOverride = resolveOccurrenceStatusFromReactions(
-        extractReactionNames(typedMessage.reactions),
-      );
+      const occurrenceStatusOverride =
+        resolveOccurrenceStatusFromReactions(extractReactionNames(typedMessage.reactions)) ??
+        "new";
 
       const result = await ingestSlackMessage(
         {
@@ -481,8 +482,7 @@ export async function backfillSlackMessages(days: number): Promise<number> {
       if (
         result.status === "ingested" &&
         result.catalogId &&
-        result.occurrenceStatus &&
-        result.wasNewOccurrence
+        result.occurrenceStatus
       ) {
         const currentStatuses = touchedCatalogStatuses.get(result.catalogId) ?? [];
         currentStatuses.push(result.occurrenceStatus);

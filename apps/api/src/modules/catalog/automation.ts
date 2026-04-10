@@ -4,7 +4,7 @@ import { Prisma } from "@prisma/client";
 export interface CatalogBackfillSnapshot {
   currentStatus: CatalogStatus;
   occurrenceStatuses: OccurrenceStatus[];
-  newOccurrenceStatuses: OccurrenceStatus[];
+  processedOccurrenceStatuses: OccurrenceStatus[];
   activeIssueCount: number;
   unassignedOccurrenceCount: number;
 }
@@ -80,8 +80,10 @@ export function resolveCatalogBackfillPlan(
 ): CatalogBackfillPlan {
   const hasActiveIssue = snapshot.activeIssueCount > 0;
   const hasInvestigatingOccurrence = snapshot.occurrenceStatuses.includes("investigating");
-  const hasNewResolvedOccurrence = snapshot.newOccurrenceStatuses.includes("resolved");
-  const hasNewInvestigatingOccurrence = snapshot.newOccurrenceStatuses.includes("investigating");
+  const hasProcessedResolvedOccurrence =
+    snapshot.processedOccurrenceStatuses.includes("resolved");
+  const hasProcessedInvestigatingOccurrence =
+    snapshot.processedOccurrenceStatuses.includes("investigating");
 
   let nextCatalogStatus = resolveCatalogStatusFromCurrentState({
     occurrenceStatuses: snapshot.occurrenceStatuses,
@@ -90,7 +92,7 @@ export function resolveCatalogBackfillPlan(
 
   const allResolved = nextCatalogStatus === "resolved";
 
-  if (!hasActiveIssue && hasNewResolvedOccurrence && !allResolved) {
+  if (!hasActiveIssue && hasProcessedResolvedOccurrence && !allResolved) {
     nextCatalogStatus = "pending";
   }
 
@@ -98,7 +100,7 @@ export function resolveCatalogBackfillPlan(
     nextCatalogStatus,
     shouldCreateAutoIssue:
       !hasActiveIssue &&
-      hasNewInvestigatingOccurrence &&
+      hasProcessedInvestigatingOccurrence &&
       snapshot.unassignedOccurrenceCount > 0,
     shouldAttachToActiveIssue:
       hasActiveIssue && snapshot.unassignedOccurrenceCount > 0,
@@ -127,7 +129,7 @@ export async function reconcileCatalogsAfterBackfill(
   tx: Prisma.TransactionClient,
   touchedCatalogStatuses: Map<string, OccurrenceStatus[]>,
 ): Promise<void> {
-  for (const [catalogId, newOccurrenceStatuses] of touchedCatalogStatuses.entries()) {
+  for (const [catalogId, processedOccurrenceStatuses] of touchedCatalogStatuses.entries()) {
     const catalog = await tx.errorCatalog.findUnique({
       where: { id: catalogId },
       select: {
@@ -171,7 +173,7 @@ export async function reconcileCatalogsAfterBackfill(
     const plan = resolveCatalogBackfillPlan({
       currentStatus: typedCatalog.status,
       occurrenceStatuses: typedCatalog.occurrences.map((occurrence) => occurrence.status),
-      newOccurrenceStatuses,
+      processedOccurrenceStatuses,
       activeIssueCount: typedCatalog.issues.length,
       unassignedOccurrenceCount: unassignedOccurrenceIds.length,
     });
