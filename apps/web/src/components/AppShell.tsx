@@ -90,6 +90,7 @@ export function AppShell({ user }: AppShellProps) {
             <NavLink to="/occurrences">DLQs</NavLink>
             <NavLink to="/issues">Issues</NavLink>
             <NavLink to="/catalog">Erros recorrentes</NavLink>
+            <NavLink to="/reports">Relatórios</NavLink>
             <NavLink to="/manual-import">Importar Manual</NavLink>
             <NavLink to="/settings">Configurações</NavLink>
           </nav>

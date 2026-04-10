@@ -245,3 +245,35 @@ export function runSlackBackfill(days: number) {
 export function getSlackBackfillJob() {
   return request<SlackBackfillJob>("/api/slack/backfill");
 }
+
+export async function downloadOperationalReportPdf(params: {
+  from: string;
+  to: string;
+}) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/reports/operational.pdf${buildQuery(params)}`,
+    {
+      credentials: "include",
+    },
+  );
+
+  if (!response.ok) {
+    let message = response.statusText;
+    try {
+      const payload = (await response.json()) as { message?: string };
+      message = payload.message ?? message;
+    } catch {
+      message = response.statusText;
+    }
+    throw new ApiError(response.status, message);
+  }
+
+  const blob = await response.blob();
+  const disposition = response.headers.get("content-disposition") ?? "";
+  const match = disposition.match(/filename=\"?([^"]+)\"?/i);
+
+  return {
+    blob,
+    filename: match?.[1] ?? "relatorio-dlq.pdf",
+  };
+}

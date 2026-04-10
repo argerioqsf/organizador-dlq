@@ -22,11 +22,13 @@
     "dotenv": "^16.4.5",
     "fastify": "^5.1.0",
     "fastify-raw-body": "^5.0.0",
+    "pdfkit": "^0.18.0",
     "pino-pretty": "^13.0.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",
+    "@types/pdfkit": "^0.17.5",
     "prisma": "^5.22.0",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3",

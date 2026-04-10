@@ -5,6 +5,10 @@ import type { CatalogStatus, OccurrenceStatus } from "@dlq-organizer/shared";
 import { env } from "../../config/env.js";
 import { prisma } from "../../db/prisma.js";
 import { reconcileCatalogsAfterBackfill } from "../../modules/catalog/automation.js";
+import {
+  applyOccurrenceStatusChangeTx,
+  syncCatalogStatusTx,
+} from "../../modules/occurrences/service.js";
 import { buildFingerprint } from "../../utils/fingerprint.js";
 import { parseDlqMessage } from "../../utils/parser.js";
 import {
@@ -182,12 +186,12 @@ async function updateOccurrenceStatusFromReactionEvent(
     return { status: "ignored", reason: "occurrence-not-found-for-reaction" };
   }
 
-  await prisma.dlqOccurrence.update({
-    where: { id: occurrence.id },
-    data: {
+  await prisma.$transaction(async (tx) => {
+    await applyOccurrenceStatusChangeTx(tx, {
+      id: occurrence.id,
       status: nextStatus,
       updatedBySlackUserId: event.user ?? "slack-reaction",
-    },
+    });
   });
 
   return {
@@ -382,7 +386,6 @@ export async function persistDlqRecord(params: {
         ]
           .filter(Boolean)
           .join("\n"),
-        status: params.occurrenceStatusOverride ?? undefined,
         catalogId: effectiveCatalog.id,
         slackPermalink: params.permalink,
         rawContent: params.parsed.rawText
@@ -423,6 +426,17 @@ export async function persistDlqRecord(params: {
         rawContent: { rawText: params.parsed.rawText },
       },
     });
+
+    if (existingSlackMessage && params.occurrenceStatusOverride) {
+      await applyOccurrenceStatusChangeTx(tx, {
+        id: occurrence.id,
+        status: params.occurrenceStatusOverride,
+        updatedBySlackUserId: "slack-backfill",
+        deferAutoIssueCreation: true,
+      });
+    } else if (!existingSlackMessage && params.occurrenceStatusOverride !== "new") {
+      await syncCatalogStatusTx(tx, occurrence.catalogId);
+    }
 
     await tx.channelSyncState.upsert({
       where: { channelId: params.channelId },

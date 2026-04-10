@@ -22,6 +22,7 @@ export function resolveCatalogStatusFromCurrentState(params: {
   const { occurrenceStatuses, activeIssueCount } = params;
   const hasActiveIssue = activeIssueCount > 0;
   const hasInvestigatingOccurrence = occurrenceStatuses.includes("investigating");
+  const hasResolvedOccurrence = occurrenceStatuses.includes("resolved");
   const allResolved =
     occurrenceStatuses.length > 0 &&
     occurrenceStatuses.every((status) => status === "resolved");
@@ -36,6 +37,10 @@ export function resolveCatalogStatusFromCurrentState(params: {
 
   if (allResolved) {
     return "resolved";
+  }
+
+  if (hasResolvedOccurrence) {
+    return "pending";
   }
 
   return "open";
@@ -55,31 +60,16 @@ export function resolveCatalogStatusAfterManualOccurrenceUpdate(params: {
   activeIssueCount: number;
   changedToStatus: OccurrenceStatus;
 }): CatalogStatus {
-  const baseline = resolveCatalogStatusFromCurrentState({
+  return resolveCatalogStatusFromCurrentState({
     occurrenceStatuses: params.occurrenceStatuses,
     activeIssueCount: params.activeIssueCount,
   });
-
-  const allResolved =
-    params.occurrenceStatuses.length > 0 &&
-    params.occurrenceStatuses.every((status) => status === "resolved");
-
-  if (
-    params.changedToStatus === "resolved" &&
-    params.activeIssueCount === 0 &&
-    !allResolved
-  ) {
-    return "pending";
-  }
-
-  return baseline;
 }
 
 export function resolveCatalogBackfillPlan(
   snapshot: CatalogBackfillSnapshot,
 ): CatalogBackfillPlan {
   const hasActiveIssue = snapshot.activeIssueCount > 0;
-  const hasInvestigatingOccurrence = snapshot.occurrenceStatuses.includes("investigating");
   const hasProcessedResolvedOccurrence =
     snapshot.processedOccurrenceStatuses.includes("resolved");
   const hasProcessedInvestigatingOccurrence =
@@ -89,12 +79,6 @@ export function resolveCatalogBackfillPlan(
     occurrenceStatuses: snapshot.occurrenceStatuses,
     activeIssueCount: snapshot.activeIssueCount,
   });
-
-  const allResolved = nextCatalogStatus === "resolved";
-
-  if (!hasActiveIssue && hasProcessedResolvedOccurrence && !allResolved) {
-    nextCatalogStatus = "pending";
-  }
 
   return {
     nextCatalogStatus,

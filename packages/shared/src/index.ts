@@ -65,6 +65,7 @@ export interface DlqOccurrence {
   searchableText: string;
   status: OccurrenceStatus;
   slackPermalink: string | null;
+  kafkaUiUrl: string | null;
   issueId: string | null;
   catalogId: string;
   updatedBySlackUserId: string | null;

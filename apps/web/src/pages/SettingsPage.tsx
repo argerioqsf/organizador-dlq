@@ -88,14 +88,14 @@ export function SettingsPage() {
 
   function getBackfillButtonLabel() {
     if (backfillMutation.isPending || backfillJob?.status === "queued") {
-      return "Enfileirando sincronização...";
+      return "Preparando sincronização...";
     }
 
     if (backfillJob?.status === "running") {
-      return "Sincronização em andamento...";
+      return "Sincronizando mensagens...";
     }
 
-    return "Sincronizar histórico agora";
+    return "Sincronizar mensagens do Slack";
   }
 
   return (
@@ -146,17 +146,16 @@ export function SettingsPage() {
 
         <article className="panel stack">
           <div className="section-title">
-            <h3>Histórico do Slack</h3>
+            <h3>Sincronização de mensagens do Slack</h3>
             <p>
-              O backfill histórico usa `conversations.history` para buscar mensagens antigas
-              do canal configurado. Antes, isso só existia via `pnpm backfill` com o padrão
-              de 90 dias.
+              Busque mensagens antigas do canal configurado no Slack para importar DLQs que
+              ainda não estão na aplicação e atualizar o status das que já existem.
             </p>
           </div>
 
           <div className="settings-history-grid">
             <label className="field">
-              <span>Dias de histórico</span>
+              <span>Janela de sincronização em dias</span>
               <input
                 type="number"
                 min={1}
@@ -169,16 +168,15 @@ export function SettingsPage() {
             <div className="settings-history-copy">
               <span className="subtle-label">Como funciona</span>
               <p className="muted-text">
-                Ao sincronizar, o backend calcula um `oldest` com base em agora menos o
-                número de dias informado, percorre a paginação do Slack em lotes de até 200
-                mensagens e reaproveita a deduplicação já existente por mensagem do canal.
+                A sincronização lê as mensagens do canal no intervalo informado, importa
+                novas DLQs e reconcilia status e emojis das mensagens que já existem aqui.
               </p>
             </div>
           </div>
 
           <div className="action-row">
             <button className="ghost-button" onClick={handleHistoryDaysSave} type="button">
-              Salvar dias
+              Salvar janela
             </button>
             <button
               className="primary-button"
@@ -197,15 +195,15 @@ export function SettingsPage() {
                 <strong>{backfillJob.status}</strong>
               </div>
               <div>
-                <span className="subtle-label">Janela usada</span>
+                <span className="subtle-label">Janela sincronizada</span>
                 <strong>{backfillJob.requestedDays ? `${backfillJob.requestedDays} dias` : "-"}</strong>
               </div>
               <div>
-                <span className="subtle-label">Mensagens processadas</span>
+                <span className="subtle-label">Mensagens lidas do Slack</span>
                 <strong>{backfillJob.processedCount}</strong>
               </div>
               <div>
-                <span className="subtle-label">Última atualização</span>
+                <span className="subtle-label">Última execução</span>
                 <strong>
                   {backfillJob.finishedAt
                     ? new Date(backfillJob.finishedAt).toLocaleString()
@@ -219,28 +217,28 @@ export function SettingsPage() {
 
           {isBackfillRunning ? (
             <p className="catalog-feedback">
-              A solicitação foi aceita e está sendo processada em background. Você pode sair
-              desta tela enquanto o backend continua a sincronização.
+              A sincronização das mensagens do Slack está rodando em background. Você pode
+              sair desta tela enquanto o backend continua o processamento.
             </p>
           ) : null}
 
           {backfillJob?.status === "succeeded" ? (
             <p className="catalog-feedback success">
-              Sincronização concluída com sucesso. As listas serão atualizadas com as DLQs
-              importadas.
+              Sincronização concluída com sucesso. As listas foram atualizadas com as novas
+              mensagens encontradas no Slack e com o status mais atual das DLQs já existentes.
             </p>
           ) : null}
 
           {backfillJob?.status === "failed" ? (
             <p className="catalog-feedback error">
               {backfillJob.errorMessage ??
-                "Não foi possível sincronizar o histórico do Slack. Verifique a configuração da integração."}
+                "Não foi possível sincronizar as mensagens do Slack. Verifique a configuração da integração."}
             </p>
           ) : null}
 
           {backfillMutation.isError ? (
             <p className="catalog-feedback error">
-              Não foi possível iniciar a sincronização do histórico do Slack.
+              Não foi possível iniciar a sincronização das mensagens do Slack.
             </p>
           ) : null}
         </article>

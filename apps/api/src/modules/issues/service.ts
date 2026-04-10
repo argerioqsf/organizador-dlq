@@ -9,6 +9,8 @@ import { Prisma } from "@prisma/client";
 
 import { prisma } from "../../db/prisma.js";
 import { slackClient } from "../../integrations/slack/service.js";
+import { syncCatalogStatusTx } from "../occurrences/service.js";
+import { buildKafkaUiMessageUrl } from "../../utils/kafka-ui.js";
 import { normalizeSlackFieldValue } from "../../utils/slack-format.js";
 import { slackTimestampToIso } from "../../utils/slack-timestamp.js";
 import { issueStatusToOccurrenceStatus } from "./status.js";
@@ -92,6 +94,10 @@ function toIssue(item: IssueWithOccurrences): Issue {
       searchableText: occurrence.searchableText,
       status: occurrence.status,
       slackPermalink: occurrence.slackPermalink,
+      kafkaUiUrl: buildKafkaUiMessageUrl({
+        topic: normalizeSlackFieldValue(occurrence.topic) ?? occurrence.topic,
+        messageKey: normalizeSlackFieldValue(occurrence.messageKey),
+      }),
       issueId: occurrence.issueId,
       catalogId: occurrence.catalogId,
       updatedBySlackUserId: occurrence.updatedBySlackUserId,
@@ -130,33 +136,6 @@ function buildWhere(filters: IssueFilters): Prisma.IssueWhereInput {
         ]
       : undefined,
   };
-}
-
-function isActiveIssueStatus(status: IssueStatus): boolean {
-  return status === "open" || status === "pending";
-}
-
-async function syncCatalogStatusFromIssues(
-  tx: Prisma.TransactionClient,
-  catalogId: string | null,
-): Promise<void> {
-  if (!catalogId) {
-    return;
-  }
-
-  const activeIssueCount = await tx.issue.count({
-    where: {
-      catalogId,
-      status: { in: ["open", "pending"] },
-    },
-  });
-
-  await tx.errorCatalog.update({
-    where: { id: catalogId },
-    data: {
-      status: activeIssueCount > 0 ? "pending" : "resolved",
-    },
-  });
 }
 
 export async function listIssues(
@@ -235,10 +214,6 @@ export async function createIssue(params: {
       },
     });
 
-    if (catalog) {
-      await syncCatalogStatusFromIssues(tx, catalog.id);
-    }
-
     if (params.includeUnassignedOccurrences && catalog) {
       await tx.dlqOccurrence.updateMany({
         where: {
@@ -263,6 +238,8 @@ export async function createIssue(params: {
         },
       });
     }
+
+    await syncCatalogStatusTx(tx, catalog?.id ?? null);
 
     return createdIssue;
   });
@@ -289,8 +266,6 @@ export async function updateIssue(params: {
     });
 
     if (params.status) {
-      await syncCatalogStatusFromIssues(tx, issue.catalogId);
-
       await tx.dlqOccurrence.updateMany({
         where: { issueId: issue.id },
         data: {
@@ -298,6 +273,8 @@ export async function updateIssue(params: {
           updatedBySlackUserId: params.updatedBySlackUserId,
         },
       });
+
+      await syncCatalogStatusTx(tx, issue.catalogId);
     }
   });
 
@@ -323,6 +300,10 @@ export async function addOccurrencesToIssue(params: {
       status: issueStatusToOccurrenceStatus(issue.status as IssueStatus),
       updatedBySlackUserId: params.updatedBySlackUserId,
     },
+  });
+
+  await prisma.$transaction(async (tx) => {
+    await syncCatalogStatusTx(tx, issue.catalogId);
   });
 
   return (await getIssue(issue.id))!;

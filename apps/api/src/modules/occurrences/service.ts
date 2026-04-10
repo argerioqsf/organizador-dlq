@@ -7,7 +7,9 @@ import type {
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "../../db/prisma.js";
-import { resolveCatalogStatusAfterManualOccurrenceUpdate } from "../catalog/automation.js";
+import { resolveCatalogStatusFromCurrentState } from "../catalog/automation.js";
+import { issueStatusToOccurrenceStatus } from "../issues/status.js";
+import { buildKafkaUiMessageUrl } from "../../utils/kafka-ui.js";
 import { normalizeSlackFieldValue } from "../../utils/slack-format.js";
 import { slackTimestampToIso } from "../../utils/slack-timestamp.js";
 
@@ -33,6 +35,140 @@ type OccurrenceWithRelations = Prisma.DlqOccurrenceGetPayload<{
   include: typeof occurrenceInclude;
 }>;
 
+export async function syncCatalogStatusTx(
+  tx: Prisma.TransactionClient,
+  catalogId: string | null,
+): Promise<void> {
+  if (!catalogId) {
+    return;
+  }
+
+  const catalog = await tx.errorCatalog.findUnique({
+    where: { id: catalogId },
+    select: {
+      id: true,
+      status: true,
+      issues: {
+        where: {
+          status: { in: ["open", "pending"] },
+        },
+        select: {
+          id: true,
+        },
+      },
+      occurrences: {
+        select: {
+          status: true,
+        },
+      },
+    },
+  });
+
+  if (!catalog) {
+    return;
+  }
+
+  const nextCatalogStatus = resolveCatalogStatusFromCurrentState({
+    occurrenceStatuses: catalog.occurrences.map(
+      (occurrence) => occurrence.status as OccurrenceStatus,
+    ),
+    activeIssueCount: catalog.issues.length,
+  });
+
+  if (nextCatalogStatus !== catalog.status) {
+    await tx.errorCatalog.update({
+      where: { id: catalog.id },
+      data: {
+        status: nextCatalogStatus,
+      },
+    });
+  }
+}
+
+export async function applyOccurrenceStatusChangeTx(
+  tx: Prisma.TransactionClient,
+  params: {
+    id: string;
+    status: OccurrenceStatus;
+    updatedBySlackUserId: string;
+    deferAutoIssueCreation?: boolean;
+  },
+): Promise<{ id: string; catalogId: string | null; status: OccurrenceStatus }> {
+  const updated = await tx.dlqOccurrence.update({
+    where: { id: params.id },
+    data: {
+      status: params.status,
+      updatedBySlackUserId: params.updatedBySlackUserId,
+    },
+    select: {
+      id: true,
+      catalogId: true,
+      status: true,
+    },
+  });
+
+  await syncCatalogStatusTx(tx, updated.catalogId);
+
+  if (
+    !params.deferAutoIssueCreation &&
+    updated.catalogId &&
+    updated.status === "investigating"
+  ) {
+    const catalog = await tx.errorCatalog.findUnique({
+      where: { id: updated.catalogId },
+      select: {
+        id: true,
+        topic: true,
+        kind: true,
+        fingerprint: true,
+        issues: {
+          where: {
+            status: { in: ["open", "pending"] },
+          },
+          select: {
+            id: true,
+          },
+        },
+      },
+    });
+
+    if (catalog && catalog.issues.length === 0) {
+      const issue = await tx.issue.create({
+        data: {
+          title: `${catalog.topic} / ${catalog.kind}`,
+          status: "pending",
+          autoCreated: true,
+          topic: catalog.topic,
+          kind: catalog.kind,
+          fingerprint: catalog.fingerprint,
+          catalogId: catalog.id,
+          updatedBySlackUserId: params.updatedBySlackUserId,
+        },
+      });
+
+      await tx.dlqOccurrence.updateMany({
+        where: {
+          catalogId: catalog.id,
+          issueId: null,
+        },
+        data: {
+          issueId: issue.id,
+          status: issueStatusToOccurrenceStatus(issue.status),
+          updatedBySlackUserId: params.updatedBySlackUserId,
+        },
+      });
+
+      await syncCatalogStatusTx(tx, catalog.id);
+    }
+  }
+
+  return {
+    id: updated.id,
+    catalogId: updated.catalogId,
+    status: updated.status as OccurrenceStatus,
+  };
+}
+
 function toOccurrence(item: OccurrenceWithRelations): DlqOccurrence {
   return {
     id: item.id,
@@ -51,6 +187,10 @@ function toOccurrence(item: OccurrenceWithRelations): DlqOccurrence {
     searchableText: item.searchableText,
     status: item.status as OccurrenceStatus,
     slackPermalink: item.slackPermalink,
+    kafkaUiUrl: buildKafkaUiMessageUrl({
+      topic: normalizeSlackFieldValue(item.topic) ?? item.topic,
+      messageKey: normalizeSlackFieldValue(item.messageKey),
+    }),
     issueId: item.issueId,
     catalogId: item.catalogId,
     updatedBySlackUserId: item.updatedBySlackUserId,
@@ -131,58 +271,12 @@ export async function updateOccurrenceStatus(params: {
   updatedBySlackUserId: string;
 }): Promise<DlqOccurrence | null> {
   const item = await prisma.$transaction(async (tx) => {
-    const updated = await tx.dlqOccurrence.update({
-      where: { id: params.id },
-      data: {
-        status: params.status,
-        updatedBySlackUserId: params.updatedBySlackUserId,
-      },
+    const updated = await applyOccurrenceStatusChangeTx(tx, params);
+
+    return tx.dlqOccurrence.findUniqueOrThrow({
+      where: { id: updated.id },
       include: occurrenceInclude,
     });
-
-    if (updated.catalogId) {
-      const catalog = await tx.errorCatalog.findUnique({
-        where: { id: updated.catalogId },
-        select: {
-          id: true,
-          status: true,
-          issues: {
-            where: {
-              status: { in: ["open", "pending"] },
-            },
-            select: {
-              id: true,
-            },
-          },
-          occurrences: {
-            select: {
-              status: true,
-            },
-          },
-        },
-      });
-
-      if (catalog) {
-        const nextCatalogStatus = resolveCatalogStatusAfterManualOccurrenceUpdate({
-          occurrenceStatuses: catalog.occurrences.map(
-            (occurrence) => occurrence.status as OccurrenceStatus,
-          ),
-          activeIssueCount: catalog.issues.length,
-          changedToStatus: params.status,
-        });
-
-        if (nextCatalogStatus !== catalog.status) {
-          await tx.errorCatalog.update({
-            where: { id: catalog.id },
-            data: {
-              status: nextCatalogStatus,
-            },
-          });
-        }
-      }
-    }
-
-    return updated;
   });
 
   return toOccurrence(item);

@@ -125,6 +125,18 @@ export function OccurrenceDetailModal({
                   )}
                 </p>
               </div>
+              <div>
+                <span className="eyebrow">Kafka</span>
+                <p>
+                  {selectedOccurrence.kafkaUiUrl ? (
+                    <a href={selectedOccurrence.kafkaUiUrl} target="_blank" rel="noreferrer">
+                      Abrir no Kafka UI
+                    </a>
+                  ) : (
+                    "-"
+                  )}
+                </p>
+              </div>
             </div>
 
             <div className="action-row">

@@ -76,7 +76,7 @@ describe("resolveCatalogBackfillPlan", () => {
     });
   });
 
-  it("keeps the catalog open when there are only new occurrences and no active issue", () => {
+  it("keeps the catalog pending when resolved and new DLQs coexist, even if the current backfill only processed new ones", () => {
     expect(
       resolveCatalogBackfillPlan({
         currentStatus: "pending",
@@ -86,7 +86,7 @@ describe("resolveCatalogBackfillPlan", () => {
         unassignedOccurrenceCount: 3,
       }),
     ).toEqual({
-      nextCatalogStatus: "open",
+      nextCatalogStatus: "pending",
       shouldCreateAutoIssue: false,
       shouldAttachToActiveIssue: false,
     });
@@ -116,10 +116,10 @@ describe("resolveCatalogStatusAfterOccurrenceResolution", () => {
     ).toBe("resolved");
   });
 
-  it("reopens the catalog when there is any non-resolved DLQ left", () => {
+  it("keeps the catalog pending when there is any non-resolved DLQ left", () => {
     expect(
       resolveCatalogStatusAfterOccurrenceResolution(["resolved", "new"]),
-    ).toBe("open");
+    ).toBe("pending");
   });
 });
 
@@ -151,6 +151,15 @@ describe("resolveCatalogStatusFromCurrentState", () => {
     ).toBe("resolved");
   });
 
+  it("keeps the catalog pending when resolved and unresolved DLQs coexist", () => {
+    expect(
+      resolveCatalogStatusFromCurrentState({
+        occurrenceStatuses: ["resolved", "new"],
+        activeIssueCount: 0,
+      }),
+    ).toBe("pending");
+  });
+
   it("reopens the catalog when all DLQs are new and there is no active issue", () => {
     expect(
       resolveCatalogStatusFromCurrentState({
@@ -180,6 +189,16 @@ describe("resolveCatalogStatusAfterManualOccurrenceUpdate", () => {
         changedToStatus: "new",
       }),
     ).toBe("open");
+  });
+
+  it("keeps the catalog pending when resolved and unresolved DLQs coexist after a manual update", () => {
+    expect(
+      resolveCatalogStatusAfterManualOccurrenceUpdate({
+        occurrenceStatuses: ["resolved", "new"],
+        activeIssueCount: 0,
+        changedToStatus: "investigating",
+      }),
+    ).toBe("pending");
   });
 
   it("keeps the catalog resolved when every DLQ is resolved", () => {

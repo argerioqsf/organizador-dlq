@@ -9,6 +9,7 @@ import { DashboardPage } from "../pages/DashboardPage";
 import { IssuesPage } from "../pages/IssuesPage";
 import { ManualImportPage } from "../pages/ManualImportPage";
 import { OccurrencesPage } from "../pages/OccurrencesPage";
+import { ReportsPage } from "../pages/ReportsPage";
 import { SettingsPage } from "../pages/SettingsPage";
 import { AppSettingsProvider } from "../settings/AppSettingsContext";
 
@@ -46,6 +47,7 @@ function AuthenticatedApp() {
         <Route path="/issues" element={<IssuesPage />} />
         <Route path="/issues/:issueId" element={<IssuesPage />} />
         <Route path="/catalog" element={<CatalogPage />} />
+        <Route path="/reports" element={<ReportsPage />} />
         <Route path="/manual-import" element={<ManualImportPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
