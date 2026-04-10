@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+
+import type { DlqOccurrence } from "@dlq-organizer/shared";
 
 import { getDashboard } from "../api/client";
 import { IssueDetailModal } from "../components/IssueDetailModal";
@@ -13,6 +15,50 @@ function summarizeIssue(title: string) {
   return title.length > 88 ? `${title.slice(0, 88)}...` : title;
 }
 
+function buildRecentDlqGroupKey(occurrence: DlqOccurrence) {
+  return occurrence.catalogId || `${occurrence.topic}::${occurrence.kind}::${occurrence.fingerprint}`;
+}
+
+function groupRecentDlqs(items: DlqOccurrence[]) {
+  const groups = new Map<
+    string,
+    {
+      representative: DlqOccurrence;
+      count: number;
+      issueTitles: Set<string>;
+    }
+  >();
+
+  for (const occurrence of items) {
+    const key = buildRecentDlqGroupKey(occurrence);
+    const current = groups.get(key);
+
+    if (!current) {
+      groups.set(key, {
+        representative: occurrence,
+        count: 1,
+        issueTitles: new Set(occurrence.issue?.title ? [occurrence.issue.title] : []),
+      });
+      continue;
+    }
+
+    current.count += 1;
+    if (occurrence.issue?.title) {
+      current.issueTitles.add(occurrence.issue.title);
+    }
+
+    if (new Date(occurrence.createdAt).getTime() > new Date(current.representative.createdAt).getTime()) {
+      current.representative = occurrence;
+    }
+  }
+
+  return Array.from(groups.values()).sort(
+    (left, right) =>
+      new Date(right.representative.createdAt).getTime() -
+      new Date(left.representative.createdAt).getTime(),
+  );
+}
+
 export function DashboardPage() {
   const { isKindIgnored, syncEnabled } = useAppSettings();
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
@@ -22,6 +68,18 @@ export function DashboardPage() {
     queryFn: getDashboard,
     refetchInterval: syncEnabled ? 15000 : false,
   });
+  const data = dashboardQuery.data;
+  const filteredHighlightedIssues = (data?.highlightedIssues ?? []).filter(
+    (issue) => !isKindIgnored(issue.catalog?.kind ?? issue.kind),
+  );
+  const filteredTopKinds = (data?.topKinds ?? []).filter((item) => !isKindIgnored(item.kind));
+  const filteredRecentOccurrences = (data?.recentOccurrences ?? []).filter((occurrence) =>
+    !isKindIgnored(occurrence.kind),
+  );
+  const groupedRecentOccurrences = useMemo(
+    () => groupRecentDlqs(filteredRecentOccurrences),
+    [filteredRecentOccurrences],
+  );
 
   if (dashboardQuery.isLoading) {
     return <section className="panel">Carregando dashboard...</section>;
@@ -31,14 +89,7 @@ export function DashboardPage() {
     return <section className="panel">Não foi possível carregar o dashboard.</section>;
   }
 
-  const data = dashboardQuery.data;
-  const filteredHighlightedIssues = data.highlightedIssues.filter(
-    (issue) => !isKindIgnored(issue.catalog?.kind ?? issue.kind),
-  );
-  const filteredTopKinds = data.topKinds.filter((item) => !isKindIgnored(item.kind));
-  const filteredRecentOccurrences = data.recentOccurrences.filter(
-    (occurrence) => !isKindIgnored(occurrence.kind),
-  );
+  const dashboardData = dashboardQuery.data;
 
   return (
     <div className="page">
@@ -62,14 +113,14 @@ export function DashboardPage() {
       </header>
 
       <section className="stats-grid">
-        <StatCard label="Total de DLQs" value={data.totalOccurrences} tone="accent" />
-        <StatCard label="Novas" value={data.statusCounts.new} />
-        <StatCard label="Investigando" value={data.statusCounts.investigating} />
-        <StatCard label="Resolvidas" value={data.statusCounts.resolved} />
-        <StatCard label="Erros recorrentes abertos" value={data.catalogStatusCounts.open} />
-        <StatCard label="Erros recorrentes pendentes" value={data.catalogStatusCounts.pending} />
-        <StatCard label="Issues abertas" value={data.issueStatusCounts.open} />
-        <StatCard label="Issues pendentes" value={data.issueStatusCounts.pending} />
+        <StatCard label="Total de DLQs" value={dashboardData.totalOccurrences} tone="accent" />
+        <StatCard label="Novas" value={dashboardData.statusCounts.new} />
+        <StatCard label="Investigando" value={dashboardData.statusCounts.investigating} />
+        <StatCard label="Resolvidas" value={dashboardData.statusCounts.resolved} />
+        <StatCard label="Erros recorrentes abertos" value={dashboardData.catalogStatusCounts.open} />
+        <StatCard label="Erros recorrentes pendentes" value={dashboardData.catalogStatusCounts.pending} />
+        <StatCard label="Issues abertas" value={dashboardData.issueStatusCounts.open} />
+        <StatCard label="Issues pendentes" value={dashboardData.issueStatusCounts.pending} />
       </section>
 
       <section className="grid two-columns">
@@ -106,7 +157,7 @@ export function DashboardPage() {
             <p>Onde o volume está concentrado.</p>
           </div>
           <div className="list">
-            {data.topTopics.map((item) => (
+            {dashboardData.topTopics.map((item) => (
               <div className="list-item compact" key={item.topic}>
                 <strong>{item.topic}</strong>
                 <span>{item.count}</span>
@@ -139,28 +190,44 @@ export function DashboardPage() {
           <Link to="/occurrences">Ver todas</Link>
         </div>
         <div className="list">
-          {filteredRecentOccurrences.length === 0 ? (
-              <p className="muted-text">Nenhuma DLQ visível com os filtros locais atuais.</p>
-            ) : (
-              filteredRecentOccurrences.map((occurrence) => (
+          {groupedRecentOccurrences.length === 0 ? (
+            <p className="muted-text">Nenhuma DLQ visível com os filtros locais atuais.</p>
+          ) : (
+              groupedRecentOccurrences.map(({ representative, count, issueTitles }) => (
                 <button
                   className="list-item occurrence-row dashboard-item-button"
-                  key={occurrence.id}
-                  onClick={() => setSelectedOccurrenceId(occurrence.id)}
+                  key={representative.id}
+                  onClick={() => setSelectedOccurrenceId(representative.id)}
                   type="button"
                 >
                   <div className="occurrence-row-date">
-                    {new Date(occurrence.createdAt).toLocaleString()}
+                    {new Date(representative.createdAt).toLocaleString()}
                   </div>
                   <div className="occurrence-row-main">
-                    <strong>{occurrence.kind}</strong>
-                    <p className="list-item-meta">{occurrence.topic}</p>
+                    <div className="occurrence-row-title">
+                      <strong>{representative.kind}</strong>
+                      {count > 1 ? (
+                        <span className="dashboard-cluster-badge">{count} DLQs</span>
+                      ) : null}
+                    </div>
+                    <p className="list-item-meta">{representative.topic}</p>
+                    <small className="list-item-caption">
+                      {count > 1
+                        ? `${count} DLQs semelhantes entre as últimas recebidas`
+                        : "1 DLQ recente"}
+                    </small>
                   </div>
                   <div className="occurrence-row-side">
                     <span className="subtle-label">Issue</span>
-                    <p>{occurrence.issue?.title ?? "Sem issue"}</p>
+                    <p>
+                      {issueTitles.size === 0
+                        ? "Sem issue"
+                        : issueTitles.size === 1
+                          ? Array.from(issueTitles)[0]
+                          : `${issueTitles.size} issues relacionadas`}
+                    </p>
                   </div>
-                  <StatusBadge status={occurrence.status} />
+                  <StatusBadge status={representative.status} />
                 </button>
               ))
             )}

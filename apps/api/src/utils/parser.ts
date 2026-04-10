@@ -1,3 +1,4 @@
+import { normalizeSlackFieldValue } from "./slack-format.js";
 import { sanitizeText } from "./sanitize.js";
 
 export interface ParsedDlqMessage {
@@ -20,16 +21,55 @@ const sectionLabels = [
   "Curl",
 ];
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizeLabelPrefix(value: string): string {
+  return value.replace(/\*/g, "").replace(/\s+/g, " ").trim().toUpperCase();
+}
+
+function normalizeSlackValue(value: string): string {
+  return normalizeSlackFieldValue(value) ?? "";
+}
+
 function extractLineValue(text: string, label: string): string | null {
-  const pattern = new RegExp(`^\\s*${label}:\\s*(.+)$`, "im");
-  const match = text.match(pattern);
-  return sanitizeText(match?.[1]?.trim() ?? null);
+  const lines = text
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => line.trim());
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const separatorIndex = line.indexOf(":");
+    if (separatorIndex === -1) {
+      continue;
+    }
+
+    const prefix = normalizeLabelPrefix(line.slice(0, separatorIndex));
+    if (prefix !== label.toUpperCase()) {
+      continue;
+    }
+
+    const inlineValue = line.slice(separatorIndex + 1).trim();
+    if (inlineValue) {
+      return sanitizeText(normalizeSlackValue(inlineValue));
+    }
+
+    const nextValue = lines.slice(index + 1).find(Boolean);
+    return sanitizeText(nextValue ? normalizeSlackValue(nextValue) : null);
+  }
+
+  return null;
 }
 
 function extractSection(text: string, label: string): string | null {
-  const nextLabels = sectionLabels.filter((item) => item !== label).join("|");
+  const nextLabels = sectionLabels
+    .filter((item) => item !== label)
+    .map((item) => `\\*?${escapeRegExp(item)}\\*?`)
+    .join("|");
   const pattern = new RegExp(
-    `${label}:\\s*([\\s\\S]*?)(?=(?:${nextLabels}):|$)`,
+    `\\*?${escapeRegExp(label)}\\*?:\\s*([\\s\\S]*?)(?=(?:${nextLabels}):|$)`,
     "i",
   );
   const match = text.match(pattern);

@@ -1,10 +1,18 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 
-import { backfillSlackMessages } from "../../integrations/slack/service.js";
 import { requireAuth } from "../auth/guard.js";
+import { getSlackBackfillJob, startSlackBackfillJob } from "./job-store.js";
 
 export const slackAdminRoutes: FastifyPluginAsync = async (fastify) => {
+  fastify.get("/api/slack/backfill", async (request, reply) => {
+    if (!requireAuth(request, reply)) {
+      return;
+    }
+
+    return reply.send(getSlackBackfillJob());
+  });
+
   fastify.post("/api/slack/backfill", async (request, reply) => {
     if (!requireAuth(request, reply)) {
       return;
@@ -16,11 +24,7 @@ export const slackAdminRoutes: FastifyPluginAsync = async (fastify) => {
       })
       .parse(request.body);
 
-    const processedCount = await backfillSlackMessages(body.days);
-
-    return reply.send({
-      requestedDays: body.days,
-      processedCount,
-    });
+    const job = startSlackBackfillJob(body.days);
+    return reply.status(202).send(job);
   });
 };

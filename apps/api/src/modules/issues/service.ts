@@ -1,7 +1,16 @@
-import type { ApiListResponse, Issue, IssueFilters, IssueStatus } from "@dlq-organizer/shared";
+import type {
+  ApiListResponse,
+  Issue,
+  IssueFilters,
+  IssueSlackSyncResult,
+  IssueStatus,
+} from "@dlq-organizer/shared";
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "../../db/prisma.js";
+import { slackClient } from "../../integrations/slack/service.js";
+import { normalizeSlackFieldValue } from "../../utils/slack-format.js";
+import { slackTimestampToIso } from "../../utils/slack-timestamp.js";
 import { issueStatusToOccurrenceStatus } from "./status.js";
 
 const issueInclude = {
@@ -15,7 +24,7 @@ const issueInclude = {
     },
   },
   occurrences: {
-    orderBy: { createdAt: "desc" },
+    orderBy: { slackTs: "desc" },
     include: {
       issue: {
         select: {
@@ -47,19 +56,21 @@ function toIssue(item: IssueWithOccurrences): Issue {
     description: item.description,
     status: item.status as IssueStatus,
     autoCreated: item.autoCreated,
-    topic: item.topic,
-    kind: item.kind,
+    topic: normalizeSlackFieldValue(item.topic),
+    kind: normalizeSlackFieldValue(item.kind),
     fingerprint: item.fingerprint,
     updatedBySlackUserId: item.updatedBySlackUserId,
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
     occurrenceCount: item.occurrences.length,
-    lastOccurrenceAt: item.occurrences[0]?.createdAt.toISOString() ?? null,
+    lastOccurrenceAt: item.occurrences[0]
+      ? slackTimestampToIso(item.occurrences[0].slackTs, item.updatedAt)
+      : null,
     catalog: item.catalog
         ? {
             id: item.catalog.id,
-            topic: item.catalog.topic,
-            kind: item.catalog.kind,
+            topic: normalizeSlackFieldValue(item.catalog.topic) ?? item.catalog.topic,
+            kind: normalizeSlackFieldValue(item.catalog.kind) ?? item.catalog.kind,
             fingerprint: item.catalog.fingerprint,
             status: item.catalog.status as "open" | "pending" | "resolved" | "canceled",
           }
@@ -69,10 +80,10 @@ function toIssue(item: IssueWithOccurrences): Issue {
       channelId: occurrence.channelId,
       slackTs: occurrence.slackTs,
       source: occurrence.source,
-      topic: occurrence.topic,
-      kind: occurrence.kind,
-      messageKey: occurrence.messageKey,
-      externalReference: occurrence.externalReference,
+      topic: normalizeSlackFieldValue(occurrence.topic) ?? occurrence.topic,
+      kind: normalizeSlackFieldValue(occurrence.kind) ?? occurrence.kind,
+      messageKey: normalizeSlackFieldValue(occurrence.messageKey),
+      externalReference: normalizeSlackFieldValue(occurrence.externalReference),
       errorMessage: occurrence.errorMessage,
       errorResponse: occurrence.errorResponse,
       errorStack: occurrence.errorStack,
@@ -84,7 +95,7 @@ function toIssue(item: IssueWithOccurrences): Issue {
       issueId: occurrence.issueId,
       catalogId: occurrence.catalogId,
       updatedBySlackUserId: occurrence.updatedBySlackUserId,
-      createdAt: occurrence.createdAt.toISOString(),
+      createdAt: slackTimestampToIso(occurrence.slackTs, occurrence.createdAt),
       updatedAt: occurrence.updatedAt.toISOString(),
       issue: occurrence.issue
         ? {
@@ -96,8 +107,9 @@ function toIssue(item: IssueWithOccurrences): Issue {
       catalog: occurrence.catalog
         ? {
             id: occurrence.catalog.id,
-            topic: occurrence.catalog.topic,
-            kind: occurrence.catalog.kind,
+            topic:
+              normalizeSlackFieldValue(occurrence.catalog.topic) ?? occurrence.catalog.topic,
+            kind: normalizeSlackFieldValue(occurrence.catalog.kind) ?? occurrence.catalog.kind,
             fingerprint: occurrence.catalog.fingerprint,
           }
         : null,
@@ -337,4 +349,87 @@ export async function removeOccurrenceFromIssue(params: {
   }
 
   return (await getIssue(params.issueId))!;
+}
+
+export async function syncResolvedIssueToSlack(params: {
+  issueId: string;
+  comment: string;
+}): Promise<IssueSlackSyncResult> {
+  if (!slackClient) {
+    throw new Error("Slack integration is not configured.");
+  }
+
+  const comment = params.comment.trim();
+  if (!comment) {
+    throw new Error("Comment is required to publish to Slack.");
+  }
+
+  const issue = await prisma.issue.findUnique({
+    where: { id: params.issueId },
+    include: {
+      occurrences: {
+        select: {
+          id: true,
+          channelId: true,
+          slackTs: true,
+        },
+      },
+    },
+  });
+
+  if (!issue) {
+    throw new Error("Issue not found.");
+  }
+
+  if (issue.status !== "resolved") {
+    throw new Error("Only resolved issues can publish a resolution to Slack.");
+  }
+
+  const uniqueMessageTargets = Array.from(
+    new Map(
+      issue.occurrences
+        .filter((occurrence) => occurrence.channelId && occurrence.slackTs)
+        .map((occurrence) => [
+          `${occurrence.channelId}:${occurrence.slackTs}`,
+          occurrence,
+        ]),
+    ).values(),
+  );
+
+  let postedReplyCount = 0;
+  let addedReactionCount = 0;
+
+  if (uniqueMessageTargets.length === 0) {
+    throw new Error("This issue has no linked Slack messages to update.");
+  }
+
+  for (const occurrence of uniqueMessageTargets) {
+    await slackClient.chat.postMessage({
+      channel: occurrence.channelId,
+      thread_ts: occurrence.slackTs,
+      text: comment,
+    });
+    postedReplyCount += 1;
+
+    try {
+      await slackClient.reactions.add({
+        channel: occurrence.channelId,
+        timestamp: occurrence.slackTs,
+        name: "white_check_mark",
+      });
+      addedReactionCount += 1;
+    } catch (error) {
+      const typedError = error as { data?: { error?: string } };
+      if (typedError.data?.error !== "already_reacted") {
+        throw error;
+      }
+    }
+  }
+
+  return {
+    issueId: issue.id,
+    postedReplyCount,
+    addedReactionCount,
+    skippedCount: Math.max(issue.occurrences.length - uniqueMessageTargets.length, 0),
+  };
 }

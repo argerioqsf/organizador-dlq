@@ -7,11 +7,12 @@ import type {
   ErrorCatalogEntry,
   Issue,
   IssueFilters,
+  IssueSlackSyncResult,
   IssueStatus,
   ManualImportResult,
   OccurrenceFilters,
   OccurrenceStatus,
-  SlackBackfillResult,
+  SlackBackfillJob,
 } from "@dlq-organizer/shared";
 
 const configuredApiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "").trim();
@@ -191,6 +192,13 @@ export function removeOccurrenceFromIssue(issueId: string, occurrenceId: string)
   });
 }
 
+export function postIssueResolutionToSlack(issueId: string, comment: string) {
+  return request<IssueSlackSyncResult>(`/api/issues/${issueId}/slack-resolution`, {
+    method: "POST",
+    body: JSON.stringify({ comment }),
+  });
+}
+
 export function listCatalog() {
   return request<ApiListResponse<ErrorCatalogEntry>>("/api/catalog");
 }
@@ -228,8 +236,12 @@ export function importManualContent(payload: {
 }
 
 export function runSlackBackfill(days: number) {
-  return request<SlackBackfillResult>("/api/slack/backfill", {
+  return request<SlackBackfillJob>("/api/slack/backfill", {
     method: "POST",
     body: JSON.stringify({ days }),
   });
+}
+
+export function getSlackBackfillJob() {
+  return request<SlackBackfillJob>("/api/slack/backfill");
 }

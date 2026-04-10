@@ -8,6 +8,7 @@ import {
   getIssue,
   listIssues,
   removeOccurrenceFromIssue,
+  syncResolvedIssueToSlack,
   updateIssue,
 } from "./service.js";
 
@@ -127,6 +128,23 @@ export const issueRoutes: FastifyPluginAsync = async (fastify) => {
         issueId: params.id,
         occurrenceId: params.occurrenceId,
         updatedBySlackUserId: user.slackUserId,
+      }),
+    );
+  });
+
+  fastify.post("/api/issues/:id/slack-resolution", async (request, reply) => {
+    const user = requireAuth(request, reply);
+    if (!user) {
+      return;
+    }
+
+    const params = z.object({ id: z.string() }).parse(request.params);
+    const body = z.object({ comment: z.string().min(1) }).parse(request.body);
+
+    return reply.send(
+      await syncResolvedIssueToSlack({
+        issueId: params.id,
+        comment: body.comment,
       }),
     );
   });

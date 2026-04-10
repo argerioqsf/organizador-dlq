@@ -898,6 +898,13 @@ td {
   gap: 0.3rem;
 }
 
+.occurrence-row-title {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
 .occurrence-row-side p {
   overflow-wrap: anywhere;
   color: var(--text-soft);
@@ -906,6 +913,24 @@ td {
 .occurrence-row .status-badge {
   justify-self: end;
   align-self: center;
+}
+
+.dashboard-cluster-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(143, 214, 255, 0.16);
+  background: rgba(143, 214, 255, 0.08);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+:root[data-theme="light"] .dashboard-cluster-badge {
+  color: #0b6da8;
+  background: rgba(14, 165, 233, 0.1);
+  border-color: rgba(14, 165, 233, 0.16);
 }
 
 .catalog-toolbar {

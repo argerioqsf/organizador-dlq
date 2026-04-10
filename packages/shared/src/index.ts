@@ -157,3 +157,26 @@ export interface SlackBackfillResult {
   requestedDays: number;
   processedCount: number;
 }
+
+export type SlackBackfillJobStatus =
+  | "idle"
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed";
+
+export interface SlackBackfillJob {
+  status: SlackBackfillJobStatus;
+  requestedDays: number | null;
+  processedCount: number;
+  startedAt: string | null;
+  finishedAt: string | null;
+  errorMessage: string | null;
+}
+
+export interface IssueSlackSyncResult {
+  issueId: string;
+  postedReplyCount: number;
+  addedReactionCount: number;
+  skippedCount: number;
+}

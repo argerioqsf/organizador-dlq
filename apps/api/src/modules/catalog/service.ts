@@ -5,6 +5,8 @@ import type {
   IssueStatus,
 } from "@dlq-organizer/shared";
 import { prisma } from "../../db/prisma.js";
+import { normalizeSlackFieldValue } from "../../utils/slack-format.js";
+import { slackTimestampToIso } from "../../utils/slack-timestamp.js";
 import { issueStatusToOccurrenceStatus } from "../issues/status.js";
 
 function mapCatalog(entry: {
@@ -16,13 +18,13 @@ function mapCatalog(entry: {
   status: string;
   createdAt: Date;
   updatedAt: Date;
-  occurrences: Array<{ createdAt: Date }>;
+  occurrences: Array<{ slackTs: string }>;
   issues: Array<{ status: string }>;
 }): ErrorCatalogEntry {
   return {
     id: entry.id,
-    topic: entry.topic,
-    kind: entry.kind,
+    topic: normalizeSlackFieldValue(entry.topic) ?? entry.topic,
+    kind: normalizeSlackFieldValue(entry.kind) ?? entry.kind,
     fingerprint: entry.fingerprint,
     signatureText: entry.signatureText,
     status: entry.status as CatalogStatus,
@@ -31,7 +33,9 @@ function mapCatalog(entry: {
     occurrenceCount: entry.occurrences.length,
     openIssueCount: entry.issues.filter((issue) => issue.status !== "resolved" && issue.status !== "canceled").length,
     totalIssueCount: entry.issues.length,
-    lastSeenAt: entry.occurrences[0]?.createdAt.toISOString() ?? null,
+    lastSeenAt: entry.occurrences[0]
+      ? slackTimestampToIso(entry.occurrences[0].slackTs, entry.updatedAt)
+      : null,
   };
 }
 
@@ -39,8 +43,8 @@ export async function listCatalog(): Promise<ApiListResponse<ErrorCatalogEntry>>
   const items = await prisma.errorCatalog.findMany({
     include: {
       occurrences: {
-        select: { createdAt: true },
-        orderBy: { createdAt: "desc" },
+        select: { slackTs: true },
+        orderBy: { slackTs: "desc" },
       },
       issues: {
         select: { status: true },
@@ -58,8 +62,8 @@ export async function getCatalogEntry(id: string): Promise<ErrorCatalogEntry | n
     where: { id },
     include: {
       occurrences: {
-        select: { createdAt: true },
-        orderBy: { createdAt: "desc" },
+        select: { slackTs: true },
+        orderBy: { slackTs: "desc" },
       },
       issues: {
         select: { status: true },
@@ -90,8 +94,8 @@ export async function updateCatalogStatus(params: {
       data: { status: nextStatus },
       include: {
         occurrences: {
-          select: { createdAt: true, id: true, issueId: true },
-          orderBy: { createdAt: "desc" },
+          select: { slackTs: true, id: true, issueId: true },
+          orderBy: { slackTs: "desc" },
         },
         issues: {
           select: { status: true },

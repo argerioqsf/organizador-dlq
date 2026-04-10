@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { runSlackBackfill } from "../api/client";
+import { getSlackBackfillJob, runSlackBackfill } from "../api/client";
 import { useAppSettings } from "../settings/AppSettingsContext";
 
 export function SettingsPage() {
@@ -23,15 +23,19 @@ export function SettingsPage() {
     [ignoredKinds],
   );
 
+  const backfillJobQuery = useQuery({
+    queryKey: ["slack-backfill-job"],
+    queryFn: getSlackBackfillJob,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "queued" || status === "running" ? 2000 : false;
+    },
+  });
+
   const backfillMutation = useMutation({
     mutationFn: (days: number) => runSlackBackfill(days),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
-        queryClient.invalidateQueries({ queryKey: ["occurrences"] }),
-        queryClient.invalidateQueries({ queryKey: ["issues"] }),
-        queryClient.invalidateQueries({ queryKey: ["catalog"] }),
-      ]);
+      await queryClient.invalidateQueries({ queryKey: ["slack-backfill-job"] });
     },
   });
 
@@ -63,6 +67,35 @@ export function SettingsPage() {
     }
 
     backfillMutation.mutate(normalized);
+  }
+
+  const backfillJob = backfillJobQuery.data;
+  const isBackfillRunning =
+    backfillJob?.status === "queued" || backfillJob?.status === "running";
+
+  useEffect(() => {
+    if (backfillJob?.status !== "succeeded" || !backfillJob.finishedAt) {
+      return;
+    }
+
+    void Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+      queryClient.invalidateQueries({ queryKey: ["occurrences"] }),
+      queryClient.invalidateQueries({ queryKey: ["issues"] }),
+      queryClient.invalidateQueries({ queryKey: ["catalog"] }),
+    ]);
+  }, [backfillJob?.finishedAt, backfillJob?.status, queryClient]);
+
+  function getBackfillButtonLabel() {
+    if (backfillMutation.isPending || backfillJob?.status === "queued") {
+      return "Enfileirando sincronização...";
+    }
+
+    if (backfillJob?.status === "running") {
+      return "Sincronização em andamento...";
+    }
+
+    return "Sincronizar histórico agora";
   }
 
   return (
@@ -149,33 +182,65 @@ export function SettingsPage() {
             </button>
             <button
               className="primary-button"
-              disabled={backfillMutation.isPending}
+              disabled={backfillMutation.isPending || isBackfillRunning}
               onClick={handleBackfill}
               type="button"
             >
-              {backfillMutation.isPending
-                ? "Sincronizando histórico..."
-                : "Sincronizar histórico agora"}
+              {getBackfillButtonLabel()}
             </button>
           </div>
 
-          {backfillMutation.data ? (
+          {backfillJob ? (
             <div className="settings-backfill-result">
               <div>
+                <span className="subtle-label">Status</span>
+                <strong>{backfillJob.status}</strong>
+              </div>
+              <div>
                 <span className="subtle-label">Janela usada</span>
-                <strong>{backfillMutation.data.requestedDays} dias</strong>
+                <strong>{backfillJob.requestedDays ? `${backfillJob.requestedDays} dias` : "-"}</strong>
               </div>
               <div>
                 <span className="subtle-label">Mensagens processadas</span>
-                <strong>{backfillMutation.data.processedCount}</strong>
+                <strong>{backfillJob.processedCount}</strong>
+              </div>
+              <div>
+                <span className="subtle-label">Última atualização</span>
+                <strong>
+                  {backfillJob.finishedAt
+                    ? new Date(backfillJob.finishedAt).toLocaleString()
+                    : backfillJob.startedAt
+                      ? new Date(backfillJob.startedAt).toLocaleString()
+                      : "-"}
+                </strong>
               </div>
             </div>
           ) : null}
 
+          {isBackfillRunning ? (
+            <p className="catalog-feedback">
+              A solicitação foi aceita e está sendo processada em background. Você pode sair
+              desta tela enquanto o backend continua a sincronização.
+            </p>
+          ) : null}
+
+          {backfillJob?.status === "succeeded" ? (
+            <p className="catalog-feedback success">
+              Sincronização concluída com sucesso. As listas serão atualizadas com as DLQs
+              importadas.
+            </p>
+          ) : null}
+
+          {backfillJob?.status === "failed" ? (
+            <p className="catalog-feedback error">
+              {backfillJob.errorMessage ??
+                "Não foi possível sincronizar o histórico do Slack. Verifique a configuração da integração."}
+            </p>
+          ) : null}
+
           {backfillMutation.isError ? (
-            <p className="muted-text">
-              Não foi possível sincronizar o histórico do Slack. Verifique `SLACK_BOT_TOKEN`
-              e `SLACK_CHANNEL_ID`.
+            <p className="catalog-feedback error">
+              Não foi possível iniciar a sincronização do histórico do Slack.
             </p>
           ) : null}
         </article>

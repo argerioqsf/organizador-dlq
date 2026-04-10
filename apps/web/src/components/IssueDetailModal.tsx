@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   addOccurrencesToIssue,
   getIssue,
+  postIssueResolutionToSlack,
   removeOccurrenceFromIssue,
   updateIssue,
 } from "../api/client";
@@ -23,6 +24,14 @@ export function IssueDetailModal({ issueId, onClose }: IssueDetailModalProps) {
   const queryClient = useQueryClient();
   const [selectedOccurrenceId, setSelectedOccurrenceId] = useState<string | null>(null);
   const [occurrenceIds, setOccurrenceIds] = useState("");
+  const [slackSyncPrompt, setSlackSyncPrompt] = useState<{
+    comment: string;
+    occurrenceCount: number;
+  } | null>(null);
+  const [slackSyncFeedback, setSlackSyncFeedback] = useState<{
+    kind: "success" | "error";
+    message: string;
+  } | null>(null);
   const [editState, setEditState] = useState({
     title: "",
     description: "",
@@ -47,13 +56,18 @@ export function IssueDetailModal({ issueId, onClose }: IssueDetailModalProps) {
   }, [issueQuery.data]);
 
   const updateMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (payload: {
+      title: string;
+      description: string;
+      status: (typeof issueStatuses)[number];
+      previousStatus: (typeof issueStatuses)[number];
+    }) =>
       updateIssue(issueId, {
-        title: editState.title,
-        description: editState.description,
-        status: editState.status as (typeof issueStatuses)[number],
+        title: payload.title,
+        description: payload.description,
+        status: payload.status,
       }),
-    onSuccess: async () => {
+    onSuccess: async (updatedIssue, payload) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["issues"] }),
         queryClient.invalidateQueries({ queryKey: ["issue", issueId] }),
@@ -61,6 +75,41 @@ export function IssueDetailModal({ issueId, onClose }: IssueDetailModalProps) {
         queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
         queryClient.invalidateQueries({ queryKey: ["catalog"] }),
       ]);
+
+      const trimmedComment = payload.description.trim();
+      const movedToResolved =
+        payload.previousStatus !== "resolved" && payload.status === "resolved";
+
+      setSlackSyncFeedback(null);
+      if (movedToResolved && trimmedComment && updatedIssue.occurrenceCount > 0) {
+        setSlackSyncPrompt({
+          comment: trimmedComment,
+          occurrenceCount: updatedIssue.occurrenceCount,
+        });
+      }
+    },
+  });
+
+  const slackSyncMutation = useMutation({
+    mutationFn: (comment: string) => postIssueResolutionToSlack(issueId, comment),
+    onSuccess: async (result) => {
+      setSlackSyncPrompt(null);
+      setSlackSyncFeedback({
+        kind: "success",
+        message: `Contexto publicado em ${result.postedReplyCount} thread(s) e check aplicado em ${result.addedReactionCount} mensagem(ns).`,
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["issue", issueId] }),
+        queryClient.invalidateQueries({ queryKey: ["issues"] }),
+        queryClient.invalidateQueries({ queryKey: ["occurrences"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+      ]);
+    },
+    onError: (error) => {
+      setSlackSyncFeedback({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Não foi possível publicar no Slack.",
+      });
     },
   });
 
@@ -149,6 +198,11 @@ export function IssueDetailModal({ issueId, onClose }: IssueDetailModalProps) {
               ) : null}
 
               <div className="stack">
+                {slackSyncFeedback ? (
+                  <p className={`catalog-feedback ${slackSyncFeedback.kind}`}>
+                    {slackSyncFeedback.message}
+                  </p>
+                ) : null}
                 <input
                   placeholder="Título da issue"
                   value={editState.title}
@@ -179,7 +233,18 @@ export function IssueDetailModal({ issueId, onClose }: IssueDetailModalProps) {
                   ))}
                 </select>
                 <div className="action-row">
-                  <button className="primary-button" onClick={() => updateMutation.mutate()}>
+                  <button
+                    className="primary-button"
+                    onClick={() =>
+                      updateMutation.mutate({
+                        title: editState.title,
+                        description: editState.description,
+                        status: editState.status as (typeof issueStatuses)[number],
+                        previousStatus:
+                          (issueQuery.data?.status as (typeof issueStatuses)[number]) ?? "open",
+                      })
+                    }
+                  >
                     Salvar issue
                   </button>
                 </div>
@@ -241,6 +306,63 @@ export function IssueDetailModal({ issueId, onClose }: IssueDetailModalProps) {
           occurrenceId={selectedOccurrenceId}
           onClose={() => setSelectedOccurrenceId(null)}
         />
+      ) : null}
+
+      {slackSyncPrompt ? (
+        <div
+          className="modal-backdrop"
+          onClick={() => setSlackSyncPrompt(null)}
+          role="presentation"
+        >
+          <section
+            aria-modal="true"
+            className="modal-panel slack-sync-modal"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow">Publicar no Slack</p>
+                <h3>Enviar contexto da resolução?</h3>
+              </div>
+              <button
+                className="ghost-button modal-close-button"
+                onClick={() => setSlackSyncPrompt(null)}
+                type="button"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div className="detail modal-body">
+              <p className="muted-text">
+                Esta issue foi marcada como resolvida. Deseja publicar o contexto abaixo nas threads
+                das {slackSyncPrompt.occurrenceCount} DLQs vinculadas e adicionar um check na
+                mensagem original?
+              </p>
+
+              <pre>{slackSyncPrompt.comment}</pre>
+
+              <div className="action-row">
+                <button
+                  className="ghost-button"
+                  onClick={() => setSlackSyncPrompt(null)}
+                  type="button"
+                >
+                  Agora não
+                </button>
+                <button
+                  className="primary-button"
+                  disabled={slackSyncMutation.isPending}
+                  onClick={() => slackSyncMutation.mutate(slackSyncPrompt.comment)}
+                  type="button"
+                >
+                  {slackSyncMutation.isPending ? "Publicando..." : "Publicar no Slack"}
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
       ) : null}
     </>
   );

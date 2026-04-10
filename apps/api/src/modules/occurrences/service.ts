@@ -7,6 +7,9 @@ import type {
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "../../db/prisma.js";
+import { resolveCatalogStatusAfterManualOccurrenceUpdate } from "../catalog/automation.js";
+import { normalizeSlackFieldValue } from "../../utils/slack-format.js";
+import { slackTimestampToIso } from "../../utils/slack-timestamp.js";
 
 const occurrenceInclude = {
   issue: {
@@ -36,10 +39,10 @@ function toOccurrence(item: OccurrenceWithRelations): DlqOccurrence {
     channelId: item.channelId,
     slackTs: item.slackTs,
     source: item.source,
-    topic: item.topic,
-    kind: item.kind,
-    messageKey: item.messageKey,
-    externalReference: item.externalReference,
+    topic: normalizeSlackFieldValue(item.topic) ?? item.topic,
+    kind: normalizeSlackFieldValue(item.kind) ?? item.kind,
+    messageKey: normalizeSlackFieldValue(item.messageKey),
+    externalReference: normalizeSlackFieldValue(item.externalReference),
     errorMessage: item.errorMessage,
     errorResponse: item.errorResponse,
     errorStack: item.errorStack,
@@ -51,7 +54,7 @@ function toOccurrence(item: OccurrenceWithRelations): DlqOccurrence {
     issueId: item.issueId,
     catalogId: item.catalogId,
     updatedBySlackUserId: item.updatedBySlackUserId,
-    createdAt: item.createdAt.toISOString(),
+    createdAt: slackTimestampToIso(item.slackTs, item.createdAt),
     updatedAt: item.updatedAt.toISOString(),
     issue: item.issue
       ? {
@@ -63,8 +66,8 @@ function toOccurrence(item: OccurrenceWithRelations): DlqOccurrence {
     catalog: item.catalog
       ? {
           id: item.catalog.id,
-          topic: item.catalog.topic,
-          kind: item.catalog.kind,
+          topic: normalizeSlackFieldValue(item.catalog.topic) ?? item.catalog.topic,
+          kind: normalizeSlackFieldValue(item.catalog.kind) ?? item.catalog.kind,
           fingerprint: item.catalog.fingerprint,
         }
       : null,
@@ -104,7 +107,7 @@ export async function listOccurrences(
     prisma.dlqOccurrence.findMany({
       where,
       include: occurrenceInclude,
-      orderBy: { createdAt: "desc" },
+      orderBy: { slackTs: "desc" },
       take,
     }),
     prisma.dlqOccurrence.count({ where }),
@@ -127,13 +130,59 @@ export async function updateOccurrenceStatus(params: {
   status: OccurrenceStatus;
   updatedBySlackUserId: string;
 }): Promise<DlqOccurrence | null> {
-  const item = await prisma.dlqOccurrence.update({
-    where: { id: params.id },
-    data: {
-      status: params.status,
-      updatedBySlackUserId: params.updatedBySlackUserId,
-    },
-    include: occurrenceInclude,
+  const item = await prisma.$transaction(async (tx) => {
+    const updated = await tx.dlqOccurrence.update({
+      where: { id: params.id },
+      data: {
+        status: params.status,
+        updatedBySlackUserId: params.updatedBySlackUserId,
+      },
+      include: occurrenceInclude,
+    });
+
+    if (updated.catalogId) {
+      const catalog = await tx.errorCatalog.findUnique({
+        where: { id: updated.catalogId },
+        select: {
+          id: true,
+          status: true,
+          issues: {
+            where: {
+              status: { in: ["open", "pending"] },
+            },
+            select: {
+              id: true,
+            },
+          },
+          occurrences: {
+            select: {
+              status: true,
+            },
+          },
+        },
+      });
+
+      if (catalog) {
+        const nextCatalogStatus = resolveCatalogStatusAfterManualOccurrenceUpdate({
+          occurrenceStatuses: catalog.occurrences.map(
+            (occurrence) => occurrence.status as OccurrenceStatus,
+          ),
+          activeIssueCount: catalog.issues.length,
+          changedToStatus: params.status,
+        });
+
+        if (nextCatalogStatus !== catalog.status) {
+          await tx.errorCatalog.update({
+            where: { id: catalog.id },
+            data: {
+              status: nextCatalogStatus,
+            },
+          });
+        }
+      }
+    }
+
+    return updated;
   });
 
   return toOccurrence(item);

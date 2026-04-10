@@ -61,6 +61,62 @@ describe("parseDlqMessage", () => {
     expect(parsed?.errorStack).toContain("CompositeError");
     expect(parsed?.curl).toContain("Ana Ana");
   });
+
+  it("parses messages when label values come on the next line", () => {
+    const parsed = parseDlqMessage(`
+      NEW DLQ MESSAGE
+      KAFKA-UI
+      TOPIC:
+      prod-cross-crm-sales-salesforce-outbound-events-v1
+      KIND:
+      OLX_OUTBOUND_ACCOUNT_CREATE
+      KEY:
+      2fd6869d-a750-41a2-a1c1-fff37fa99bc5
+      Error Message:
+      Request failed with status code 409
+      Error Response:
+      {"message":"CPF_IN_USE"}
+    `);
+
+    expect(parsed).not.toBeNull();
+    expect(parsed?.topic).toBe("prod-cross-crm-sales-salesforce-outbound-events-v1");
+    expect(parsed?.kind).toBe("OLX_OUTBOUND_ACCOUNT_CREATE");
+    expect(parsed?.messageKey).toBe("2fd6869d-a750-41a2-a1c1-fff37fa99bc5");
+    expect(parsed?.errorMessage).toContain("status code 409");
+  });
+
+  it("parses labels wrapped in Slack markdown emphasis", () => {
+    const parsed = parseDlqMessage(`
+      NEW DLQ MESSAGE
+      KAFKA-UI
+      *TOPIC:* prod-cross-crm-sales-salesforce-outbound-events-v1
+      *KIND:* OLX_OUTBOUND_ACCOUNT_CREATE
+      *KEY:* 2fd6869d-a750-41a2-a1c1-fff37fa99bc5
+      *Error Message:* Request failed with status code 409
+      *Error Response:* {"message":"CPF_IN_USE"}
+      *Error Stack:* AxiosError: Request failed with status code 409
+    `);
+
+    expect(parsed).not.toBeNull();
+    expect(parsed?.topic).toBe("prod-cross-crm-sales-salesforce-outbound-events-v1");
+    expect(parsed?.kind).toBe("OLX_OUTBOUND_ACCOUNT_CREATE");
+    expect(parsed?.messageKey).toBe("2fd6869d-a750-41a2-a1c1-fff37fa99bc5");
+    expect(parsed?.errorResponse).toContain("CPF_IN_USE");
+  });
+
+  it("removes wrapping backticks from extracted values", () => {
+    const parsed = parseDlqMessage(`
+      NEW DLQ MESSAGE
+      KAFKA-UI
+      TOPIC: prod-cross-crm-sales-salesforce-inbound-events-v1
+      KIND: \`CRM_INBOUND_ORDER_STATUS_UPDATED\`
+      KEY: abc
+      Error Message: Request failed with status code 409
+    `);
+
+    expect(parsed).not.toBeNull();
+    expect(parsed?.kind).toBe("CRM_INBOUND_ORDER_STATUS_UPDATED");
+  });
 });
 
 describe("sanitizeText", () => {

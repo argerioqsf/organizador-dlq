@@ -1,7 +1,32 @@
 import type { FastifyPluginAsync } from "fastify";
 
-import { ingestSlackMessage, type SlackMessageEventPayload } from "./service.js";
+import {
+  ingestSlackEvent,
+  type SlackEventPayload,
+  type SlackMessageEventPayload,
+} from "./service.js";
 import { verifySlackSignature } from "./signature.js";
+
+function extractSlackEventContext(event: SlackEventPayload) {
+  if ("item" in event && event.item) {
+    return {
+      type: event.type ?? null,
+      channel: event.item.channel ?? null,
+      ts: event.item.ts ?? null,
+      subtype: null,
+      reaction: "reaction" in event ? event.reaction ?? null : null,
+    };
+  }
+
+  const messageEvent = event as SlackMessageEventPayload;
+  return {
+    type: messageEvent.type ?? "message",
+    channel: messageEvent.channel ?? null,
+    ts: messageEvent.ts ?? null,
+    subtype: messageEvent.subtype ?? null,
+    reaction: null,
+  };
+}
 
 export const slackRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post("/integrations/slack/events", async (request, reply) => {
@@ -37,22 +62,20 @@ export const slackRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     if (payload?.type === "event_callback" && payload.event) {
-      const event = payload.event as SlackMessageEventPayload;
+      const event = payload.event as SlackEventPayload;
+      const context = extractSlackEventContext(event);
       request.log.info(
-        {
-          channel: event.channel ?? null,
-          ts: event.ts ?? null,
-          subtype: event.subtype ?? null,
-        },
+        context,
         "Slack event callback received",
       );
 
-      const result = await ingestSlackMessage(event);
+      const result = await ingestSlackEvent(event);
 
       request.log.info(
         {
-          channel: event.channel ?? null,
-          ts: event.ts ?? null,
+          type: context.type,
+          channel: context.channel,
+          ts: context.ts,
           result,
         },
         "Slack event processed",

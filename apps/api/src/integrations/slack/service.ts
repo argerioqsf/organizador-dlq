@@ -4,16 +4,25 @@ import type { CatalogStatus, OccurrenceStatus } from "@dlq-organizer/shared";
 
 import { env } from "../../config/env.js";
 import { prisma } from "../../db/prisma.js";
+import { reconcileCatalogsAfterBackfill } from "../../modules/catalog/automation.js";
 import { buildFingerprint } from "../../utils/fingerprint.js";
 import { parseDlqMessage } from "../../utils/parser.js";
+import {
+  extractReactionNames,
+  resolveOccurrenceStatusFromReactions,
+} from "../../utils/slack-reaction-rules.js";
 import { sanitizeText, sanitizeUnknown } from "../../utils/sanitize.js";
+import { isSupportedSlackMessageSubtype } from "../../utils/slack-event.js";
 import { extractSlackText } from "../../utils/slack-message.js";
 
 export const slackClient = env.SLACK_BOT_TOKEN
   ? new WebClient(env.SLACK_BOT_TOKEN)
   : null;
 
+let slackBotUserIdPromise: Promise<string | null> | null = null;
+
 export interface SlackMessageEventPayload {
+  type?: "message";
   channel?: string;
   ts?: string;
   text?: string;
@@ -21,17 +30,37 @@ export interface SlackMessageEventPayload {
   attachments?: unknown[];
   bot_id?: string;
   subtype?: string;
+  reactions?: Array<{
+    name?: string;
+    count?: number;
+  }>;
 }
 
+export interface SlackReactionEventPayload {
+  type?: "reaction_added" | "reaction_removed";
+  user?: string;
+  reaction?: string;
+  item?: {
+    type?: string;
+    channel?: string;
+    ts?: string;
+  };
+  item_user?: string;
+  event_ts?: string;
+}
+
+export type SlackEventPayload =
+  | SlackMessageEventPayload
+  | SlackReactionEventPayload;
+
 export interface SlackIngestResult {
-  status: "ignored" | "ingested";
+  status: "ignored" | "ingested" | "updated";
   reason?: string;
   occurrenceId?: string;
   catalogId?: string;
-}
-
-function buildIssueTitle(topic: string, kind: string, message: string | null): string {
-  return `${topic} / ${kind}${message ? ` - ${message.slice(0, 120)}` : ""}`;
+  preview?: string;
+  occurrenceStatus?: OccurrenceStatus;
+  wasNewOccurrence?: boolean;
 }
 
 async function getPermalink(channel: string, messageTs: string): Promise<string | null> {
@@ -65,11 +94,132 @@ function occurrenceStatusFromCatalog(catalogStatus: CatalogStatus): OccurrenceSt
   }
 }
 
+function isReactionEvent(
+  event: SlackEventPayload,
+): event is SlackReactionEventPayload {
+  return event.type === "reaction_added" || event.type === "reaction_removed";
+}
+
+async function getCurrentReactionNamesForMessage(
+  channel: string,
+  messageTs: string,
+): Promise<string[]> {
+  if (!slackClient) {
+    return [];
+  }
+
+  try {
+    const response = await slackClient.reactions.get({
+      channel,
+      timestamp: messageTs,
+      full: false,
+    });
+
+    const reactions =
+      "message" in response && response.message && "reactions" in response.message
+        ? response.message.reactions
+        : [];
+
+    return extractReactionNames(reactions);
+  } catch (error) {
+    throw error;
+  }
+}
+
+async function getSlackBotUserId(): Promise<string | null> {
+  if (!slackClient) {
+    return null;
+  }
+
+  if (!slackBotUserIdPromise) {
+    slackBotUserIdPromise = slackClient.auth
+      .test()
+      .then((response) => response.user_id ?? null)
+      .catch(() => null);
+  }
+
+  return slackBotUserIdPromise;
+}
+
+async function updateOccurrenceStatusFromReactionEvent(
+  event: SlackReactionEventPayload,
+): Promise<SlackIngestResult> {
+  const channel = event.item?.channel;
+  const messageTs = event.item?.ts;
+
+  if (!channel || !messageTs || event.item?.type !== "message") {
+    return { status: "ignored", reason: "reaction-without-message-reference" };
+  }
+
+  if (!env.SLACK_CHANNEL_ID || channel !== env.SLACK_CHANNEL_ID) {
+    return { status: "ignored", reason: "channel-not-allowed" };
+  }
+
+  if (!event.reaction) {
+    return { status: "ignored", reason: "reaction-name-missing" };
+  }
+
+  const slackBotUserId = await getSlackBotUserId();
+  if (slackBotUserId && event.user === slackBotUserId) {
+    return { status: "ignored", reason: "self-generated-reaction-event" };
+  }
+
+  const currentReactionNames = await getCurrentReactionNamesForMessage(channel, messageTs);
+  const nextStatus = resolveOccurrenceStatusFromReactions(currentReactionNames) ?? "new";
+
+  const occurrence = await prisma.dlqOccurrence.findFirst({
+    where: {
+      channelId: channel,
+      slackTs: messageTs,
+    },
+    select: {
+      id: true,
+      catalogId: true,
+    },
+  });
+
+  if (!occurrence) {
+    return { status: "ignored", reason: "occurrence-not-found-for-reaction" };
+  }
+
+  await prisma.dlqOccurrence.update({
+    where: { id: occurrence.id },
+    data: {
+      status: nextStatus,
+      updatedBySlackUserId: event.user ?? "slack-reaction",
+    },
+  });
+
+  return {
+    status: "updated",
+    occurrenceId: occurrence.id,
+    catalogId: occurrence.catalogId,
+    occurrenceStatus: nextStatus,
+  };
+}
+
+export async function ingestSlackEvent(
+  event: SlackEventPayload,
+): Promise<SlackIngestResult> {
+  if (isReactionEvent(event)) {
+    return updateOccurrenceStatusFromReactionEvent(event);
+  }
+
+  return ingestSlackMessage(event);
+}
+
 export async function ingestSlackMessage(
   event: SlackMessageEventPayload,
+  options?: {
+    occurrenceStatusOverride?: OccurrenceStatus | null;
+  },
 ): Promise<SlackIngestResult> {
-  if (!event.channel || !event.ts || event.subtype) {
-    return { status: "ignored", reason: "missing-channel-ts-or-subtype" };
+  if (!event.channel || !event.ts) {
+    return { status: "ignored", reason: "missing-channel-or-ts" };
+  }
+
+  if (!isSupportedSlackMessageSubtype(event.subtype)) {
+    return { status: "ignored", reason: "unsupported-subtype" };
   }
 
   if (!env.SLACK_CHANNEL_ID || event.channel !== env.SLACK_CHANNEL_ID) {
@@ -81,7 +231,11 @@ export async function ingestSlackMessage(
   const parsed = parseDlqMessage(normalizedText);
 
   if (!parsed) {
-    return { status: "ignored", reason: "message-not-recognized-as-dlq" };
+    return {
+      status: "ignored",
+      reason: "message-not-recognized-as-dlq",
+      preview: normalizedText.slice(0, 400),
+    };
   }
 
   const permalink = await getPermalink(event.channel, event.ts);
@@ -94,12 +248,16 @@ export async function ingestSlackMessage(
     parsed,
     rawPayload,
     permalink,
+    occurrenceStatusOverride: options?.occurrenceStatusOverride,
   });
 
   return {
     status: "ingested",
     occurrenceId: persisted.occurrenceId,
     catalogId: persisted.catalogId,
+    preview: normalizedText.slice(0, 400),
+    occurrenceStatus: persisted.occurrenceStatus,
+    wasNewOccurrence: persisted.wasNewOccurrence,
   };
 }
 
@@ -115,7 +273,14 @@ export async function persistDlqRecord(params: {
     : never;
   rawPayload: Record<string, unknown>;
   permalink: string | null;
-}): Promise<{ occurrenceId: string; issueId: string | null; catalogId: string }> {
+  occurrenceStatusOverride?: OccurrenceStatus | null;
+}): Promise<{
+  occurrenceId: string;
+  issueId: string | null;
+  catalogId: string;
+  occurrenceStatus: OccurrenceStatus;
+  wasNewOccurrence: boolean;
+}> {
   const fingerprint = buildFingerprint(params.parsed);
   const signatureText =
     sanitizeText(
@@ -126,6 +291,18 @@ export async function persistDlqRecord(params: {
   const sanitizedPayload = sanitizeUnknown(params.rawPayload) as Prisma.JsonObject;
 
   return prisma.$transaction(async (tx) => {
+    const existingSlackMessage = await tx.slackMessage.findUnique({
+      where: {
+        channelId_slackTs: {
+          channelId: params.channelId,
+          slackTs: params.slackTs,
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
     const slackMessage = await tx.slackMessage.upsert({
       where: {
         channelId_slackTs: {
@@ -205,11 +382,7 @@ export async function persistDlqRecord(params: {
         ]
           .filter(Boolean)
           .join("\n"),
-        status: occurrenceStatusFromCatalog(
-          effectiveCatalog.status as CatalogStatus,
-        ),
         catalogId: effectiveCatalog.id,
-        issueId: null,
         slackPermalink: params.permalink,
         rawContent: params.parsed.rawText
           ? ({ rawText: params.parsed.rawText } as Prisma.JsonObject)
@@ -240,9 +413,9 @@ export async function persistDlqRecord(params: {
         ]
           .filter(Boolean)
           .join("\n"),
-        status: occurrenceStatusFromCatalog(
-          effectiveCatalog.status as CatalogStatus,
-        ),
+        status:
+          params.occurrenceStatusOverride ??
+          occurrenceStatusFromCatalog(effectiveCatalog.status as CatalogStatus),
         catalogId: effectiveCatalog.id,
         issueId: null,
         slackPermalink: params.permalink,
@@ -263,8 +436,10 @@ export async function persistDlqRecord(params: {
 
     return {
       occurrenceId: occurrence.id,
-      issueId: null,
+      issueId: occurrence.issueId,
       catalogId: effectiveCatalog.id,
+      occurrenceStatus: occurrence.status as OccurrenceStatus,
+      wasNewOccurrence: !existingSlackMessage,
     };
   });
 }
@@ -277,6 +452,7 @@ export async function backfillSlackMessages(days: number): Promise<number> {
   const oldest = String(Math.floor(Date.now() / 1000) - days * 24 * 60 * 60);
   let cursor: string | undefined;
   let count = 0;
+  const touchedCatalogStatuses = new Map<string, OccurrenceStatus[]>();
 
   do {
     const response = await slackClient.conversations.history({
@@ -287,7 +463,32 @@ export async function backfillSlackMessages(days: number): Promise<number> {
     });
 
     for (const message of response.messages ?? []) {
-      await ingestSlackMessage(message as SlackMessageEventPayload);
+      const typedMessage = message as SlackMessageEventPayload;
+      const occurrenceStatusOverride = resolveOccurrenceStatusFromReactions(
+        extractReactionNames(typedMessage.reactions),
+      );
+
+      const result = await ingestSlackMessage(
+        {
+          ...typedMessage,
+          channel: typedMessage.channel ?? env.SLACK_CHANNEL_ID,
+        },
+        {
+          occurrenceStatusOverride,
+        },
+      );
+
+      if (
+        result.status === "ingested" &&
+        result.catalogId &&
+        result.occurrenceStatus &&
+        result.wasNewOccurrence
+      ) {
+        const currentStatuses = touchedCatalogStatuses.get(result.catalogId) ?? [];
+        currentStatuses.push(result.occurrenceStatus);
+        touchedCatalogStatuses.set(result.catalogId, currentStatuses);
+      }
+
       count += 1;
     }
 
@@ -306,6 +507,10 @@ export async function backfillSlackMessages(days: number): Promise<number> {
       },
     });
   } while (cursor);
+
+  await prisma.$transaction(async (tx) => {
+    await reconcileCatalogsAfterBackfill(tx, touchedCatalogStatuses);
+  });
 
   return count;
 }
