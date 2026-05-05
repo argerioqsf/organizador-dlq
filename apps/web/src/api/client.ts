@@ -2,6 +2,7 @@ import type {
   ApiListResponse,
   AuthenticatedUser,
   CatalogStatus,
+  ConfluenceReportResult,
   DashboardSummary,
   DlqOccurrence,
   ErrorCatalogEntry,
@@ -12,6 +13,8 @@ import type {
   ManualImportResult,
   OccurrenceFilters,
   OccurrenceStatus,
+  ReportStatusFilter,
+  ResetWorkspaceResult,
   SlackBackfillJob,
 } from "@dlq-organizer/shared";
 
@@ -246,12 +249,23 @@ export function getSlackBackfillJob() {
   return request<SlackBackfillJob>("/api/slack/backfill");
 }
 
+export function resetWorkspaceData() {
+  return request<ResetWorkspaceResult>("/api/admin/reset-workspace", {
+    method: "DELETE",
+  });
+}
+
 export async function downloadOperationalReportPdf(params: {
   from: string;
   to: string;
+  statuses: ReportStatusFilter[];
 }) {
   const response = await fetch(
-    `${API_BASE_URL}/api/reports/operational.pdf${buildQuery(params)}`,
+    `${API_BASE_URL}/api/reports/operational.pdf${buildQuery({
+      from: params.from,
+      to: params.to,
+      statuses: params.statuses.join(","),
+    })}`,
     {
       credentials: "include",
     },
@@ -276,4 +290,15 @@ export async function downloadOperationalReportPdf(params: {
     blob,
     filename: match?.[1] ?? "relatorio-dlq.pdf",
   };
+}
+
+export function publishOperationalReportToConfluence(params: {
+  from: string;
+  to: string;
+  statuses: ReportStatusFilter[];
+}) {
+  return request<ConfluenceReportResult>("/api/reports/confluence", {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
 }

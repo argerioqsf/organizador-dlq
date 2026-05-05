@@ -222,7 +222,6 @@ export async function createIssue(params: {
         },
         data: {
           issueId: createdIssue.id,
-          status: issueStatusToOccurrenceStatus(createdIssue.status as IssueStatus),
           updatedBySlackUserId: params.updatedBySlackUserId,
         },
       });
@@ -233,7 +232,6 @@ export async function createIssue(params: {
         where: { id: { in: params.occurrenceIds } },
         data: {
           issueId: createdIssue.id,
-          status: issueStatusToOccurrenceStatus(createdIssue.status as IssueStatus),
           updatedBySlackUserId: params.updatedBySlackUserId,
         },
       });
@@ -297,7 +295,6 @@ export async function addOccurrencesToIssue(params: {
     },
     data: {
       issueId: issue.id,
-      status: issueStatusToOccurrenceStatus(issue.status as IssueStatus),
       updatedBySlackUserId: params.updatedBySlackUserId,
     },
   });

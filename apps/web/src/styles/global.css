@@ -828,6 +828,33 @@ td {
   gap: 1rem;
 }
 
+.report-status-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.report-status-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 46px;
+  padding: 0.78rem 0.95rem;
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+}
+
+.report-status-option input {
+  margin: 0;
+}
+
+.report-status-option span {
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
 .empty-state {
   min-height: 220px;
   display: grid;
@@ -1246,6 +1273,15 @@ td {
 
 .ghost-button:hover {
   background: var(--hover-bg);
+}
+
+.danger-button {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--panel-border));
+}
+
+.danger-button:hover {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
 .login-screen {

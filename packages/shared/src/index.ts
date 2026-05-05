@@ -181,3 +181,25 @@ export interface IssueSlackSyncResult {
   addedReactionCount: number;
   skippedCount: number;
 }
+
+export interface ResetWorkspaceResult {
+  deletedOccurrences: number;
+  deletedIssues: number;
+  deletedCatalogs: number;
+  deletedSlackMessages: number;
+  deletedChannelSyncStates: number;
+}
+
+export interface ConfluenceReportResult {
+  pageId: string;
+  title: string;
+  url: string;
+}
+
+export const reportStatusFilters = [
+  "pending",
+  "in_progress",
+  "resolved",
+] as const;
+
+export type ReportStatusFilter = (typeof reportStatusFilters)[number];

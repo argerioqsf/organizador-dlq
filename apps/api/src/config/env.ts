@@ -40,6 +40,11 @@ const envSchema = z.object({
   SLACK_ALLOWED_EMAIL_DOMAIN: z.string().optional(),
   SLACK_ALLOWED_USER_IDS: z.string().optional(),
   BACKFILL_DAYS: z.coerce.number().default(90),
+  CONFLUENCE_BASE_URL: z.string().url().optional(),
+  CONFLUENCE_EMAIL: z.string().optional(),
+  CONFLUENCE_API_TOKEN: z.string().optional(),
+  CONFLUENCE_SPACE_KEY: z.string().optional(),
+  CONFLUENCE_PARENT_PAGE_ID: z.string().optional(),
 });
 
 export const env = envSchema.parse(process.env);

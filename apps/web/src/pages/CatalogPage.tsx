@@ -56,7 +56,7 @@ function summarizeOccurrence(entry: {
 export function CatalogPage() {
   const { isKindIgnored, syncEnabled } = useAppSettings();
   const queryClient = useQueryClient();
-  const [statusFilter, setStatusFilter] = useState<string>("open");
+  const [statusFilter, setStatusFilter] = useState<string>("");
   const [expandedCatalogId, setExpandedCatalogId] = useState<string | null>(null);
   const [selectedOccurrenceId, setSelectedOccurrenceId] = useState<string | null>(null);
   const [issuesCatalogId, setIssuesCatalogId] = useState<string | null>(null);
@@ -148,6 +148,7 @@ export function CatalogPage() {
         <div className="panel-header">
           <h3>Lista</h3>
           <div className="catalog-toolbar">
+            <span className="muted-text">{filteredItems.length} itens</span>
             <select
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value)}

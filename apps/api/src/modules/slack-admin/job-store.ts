@@ -35,8 +35,21 @@ function isRunning(job: MutableSlackBackfillJob): boolean {
   return job.status === "queued" || job.status === "running";
 }
 
+export function hasRunningSlackBackfillJob(): boolean {
+  return isRunning(currentJob);
+}
+
 export function getSlackBackfillJob(): SlackBackfillJob {
   return toSlackBackfillJob(currentJob);
+}
+
+export function resetSlackBackfillJob() {
+  currentJob.status = "idle";
+  currentJob.requestedDays = null;
+  currentJob.processedCount = 0;
+  currentJob.startedAt = null;
+  currentJob.finishedAt = null;
+  currentJob.errorMessage = null;
 }
 
 export function startSlackBackfillJob(days: number): SlackBackfillJob {

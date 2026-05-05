@@ -214,4 +214,26 @@ describe("buildFingerprint", () => {
 
     expect(firstFingerprint).toBe(secondFingerprint);
   });
+
+  it("groups equivalent free-text errors even when email and order id differ", () => {
+    const first = buildFingerprint({
+      topic: "prod-cross-crm-sales-salesforce-outbound-events-v1",
+      kind: "OLX_OUTBOUND_ACCOUNT_CREATE",
+      errorMessage:
+        'Account not found in Salesforce for online/OLX order. Email: <mailto:juliano_civil@hotmail.com|juliano_civil@hotmail.com>, OrderId: 32efae55-bd9a-4dd8-8bf5-20e9040cea60. The account may not have been created during the account validation flow.',
+      errorResponse: null,
+      errorStack: null,
+    });
+
+    const second = buildFingerprint({
+      topic: "prod-cross-crm-sales-salesforce-outbound-events-v1",
+      kind: "OLX_OUTBOUND_ACCOUNT_CREATE",
+      errorMessage:
+        'Account not found in Salesforce for online/OLX order. Email: <mailto:edsoneduardof@gmail.com|edsoneduardof@gmail.com>, OrderId: 8dbc89d6-4444-4700-91ca-c004675aec81. The account may not have been created during the account validation flow.',
+      errorResponse: null,
+      errorStack: null,
+    });
+
+    expect(first).toBe(second);
+  });
 });

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { getSlackBackfillJob, runSlackBackfill } from "../api/client";
+import { getSlackBackfillJob, resetWorkspaceData, runSlackBackfill } from "../api/client";
 import { useAppSettings } from "../settings/AppSettingsContext";
 
 export function SettingsPage() {
@@ -17,6 +17,7 @@ export function SettingsPage() {
   } = useAppSettings();
   const [draftKinds, setDraftKinds] = useState("");
   const [draftHistoryDays, setDraftHistoryDays] = useState(String(slackHistoryDays));
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
 
   const ignoredKindsPreview = useMemo(
     () => ignoredKinds.slice().sort((left, right) => left.localeCompare(right)),
@@ -36,6 +37,26 @@ export function SettingsPage() {
     mutationFn: (days: number) => runSlackBackfill(days),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["slack-backfill-job"] });
+    },
+  });
+
+  const resetMutation = useMutation({
+    mutationFn: resetWorkspaceData,
+    onSuccess: async (result) => {
+      setResetMessage(
+        `Base limpa com sucesso. ${result.deletedOccurrences} DLQs, ${result.deletedIssues} issues, ${result.deletedCatalogs} erros recorrentes e ${result.deletedSlackMessages} mensagens do Slack foram removidos.`,
+      );
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["dashboard"] }),
+        queryClient.invalidateQueries({ queryKey: ["occurrences"] }),
+        queryClient.invalidateQueries({ queryKey: ["issues"] }),
+        queryClient.invalidateQueries({ queryKey: ["catalog"] }),
+        queryClient.invalidateQueries({ queryKey: ["slack-backfill-job"] }),
+      ]);
+    },
+    onError: () => {
+      setResetMessage(null);
     },
   });
 
@@ -67,6 +88,19 @@ export function SettingsPage() {
     }
 
     backfillMutation.mutate(normalized);
+  }
+
+  function handleResetWorkspace() {
+    const confirmed = window.confirm(
+      "Isso vai apagar todas as DLQs, issues, erros recorrentes, mensagens importadas do Slack e estado de sincronização. Deseja continuar?",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setResetMessage(null);
+    resetMutation.mutate();
   }
 
   const backfillJob = backfillJobQuery.data;
@@ -282,6 +316,41 @@ export function SettingsPage() {
               ))
             )}
           </div>
+        </article>
+
+        <article className="panel stack">
+          <div className="section-title">
+            <h3>Limpar base da aplicação</h3>
+            <p>
+              Remove todas as DLQs, issues, erros recorrentes, mensagens sincronizadas do
+              Slack e o estado atual de sincronização. Use isso para zerar o ambiente.
+            </p>
+          </div>
+
+          <p className="catalog-feedback error">
+            Essa ação é destrutiva e não pode ser desfeita. A autenticação da sua sessão é
+            mantida, mas toda a base operacional será apagada.
+          </p>
+
+          <div className="action-row">
+            <button
+              className="ghost-button danger-button"
+              disabled={resetMutation.isPending || isBackfillRunning}
+              onClick={handleResetWorkspace}
+              type="button"
+            >
+              {resetMutation.isPending ? "Limpando base..." : "Limpar toda a base"}
+            </button>
+          </div>
+
+          {resetMessage ? <p className="catalog-feedback success">{resetMessage}</p> : null}
+
+          {resetMutation.isError ? (
+            <p className="catalog-feedback error">
+              Não foi possível limpar a base agora. Se houver sincronização em andamento,
+              aguarde o término e tente novamente.
+            </p>
+          ) : null}
         </article>
       </section>
     </div>

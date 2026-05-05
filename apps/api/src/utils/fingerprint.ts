@@ -8,10 +8,14 @@ const SALESFORCE_ID_REGEX = /\b[a-z0-9]{15,18}\b/gi;
 const FILE_LINE_REGEX = /:\d+:\d+\b/g;
 const ISO_DATE_REGEX =
   /\b\d{4}-\d{2}-\d{2}[tT ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?\b/g;
+const MAILTO_REGEX = /<mailto:[^>|]+(?:\|[^>]+)?>/gi;
+const EMAIL_REGEX = /\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b/gi;
 
 export function normalizeFingerprint(input: string): string {
   return input
     .toLowerCase()
+    .replace(MAILTO_REGEX, "<email>")
+    .replace(EMAIL_REGEX, "<email>")
     .replace(UUID_REGEX, "<uuid>")
     .replace(ISO_DATE_REGEX, "<date>")
     .replace(LONG_HEX_REGEX, "<hex>")
